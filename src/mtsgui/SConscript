@@ -26,7 +26,7 @@ if hasQt:
         if qtEnv.has_key('QTINCLUDE'):
                 qtEnv.Prepend(CPPPATH=qtEnv['QTINCLUDE'])
         qtEnv.EnableQt5Modules(['QtGui', 'QtWidgets', 'QtCore', 'QtOpenGL', 'QtXml', 'QtXmlPatterns', 'QtNetwork'])
-
+        qtEnv.Append(LIBPATH=['/usr/lib/x86_64-linux-gnu'])
         if sys.platform == 'win32':
                 index = qtEnv['CXXFLAGS'].index('_CONSOLE')
                 del qtEnv['CXXFLAGS'][index-1]
@@ -66,8 +66,12 @@ if hasQt:
                 qtSources += qtEnv_osx.StaticObject('previewsettingsdlg_cocoa_impl.mm')
         else:
                 qtSources = [x for x in qtSources if (not isinstance(x, str) or 'cocoa' not in x)]
-
-        mtsgui = qtEnv.Program('mtsgui', qtSources)
+        print(qtSources)
+        if sys.platform == 'linux':
+                mtsgui = qtEnv.Program('mtsgui', qtSources, parse_flags='-L/usr/lib/x86_64-linux-gnu -lQt5Concurrent -lQt5Core -lQt5DBus -lQt5EglFSDeviceIntegration -lQt5EglFsKmsSupport -lQt5Gui -lQt5Network -lQt5OpenGLExtensions -lQt5OpenGL -lQt5PrintSupport -lQt5Sql -lQt5Test -lQt5Widgets -lQt5XcbQpa -lQt5XmlPatterns -lQt5Xml -lQtCLucene -lQtCore -lQtDBus -lQtDeclarative -lQtDesignerComponents -lQtDesigner -lQtGui -lQtHelp -lQtNetwork -lQtOpenGL -lQtScriptTools -lQtSql -lQtSvg -lQtTest -lQtUiTools -lQtXmlPatterns -lQtXml')
+        else:
+                mtsgui = qtEnv.Program('mtsgui', qtSources) 
+            
         if sys.platform == 'darwin':
                 qtEnv.AddPostAction(mtsgui, 'install_name_tool -change @rpath/QtGui.framework/Versions/5/QtGui @rpath/QtGui $TARGET')
                 qtEnv.AddPostAction(mtsgui, 'install_name_tool -change @rpath/QtWidgets.framework/Versions/5/QtWidgets @rpath/QtWidgets $TARGET')
