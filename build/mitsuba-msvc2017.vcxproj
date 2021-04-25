@@ -615,6 +615,8 @@
 			</ClCompile>
 		<ClCompile Include="..\src\bsdfs\thindielectric.cpp">
 			</ClCompile>
+		<ClCompile Include="..\src\bsdfs\marschner.cpp">
+			</ClCompile>
 		<ClCompile Include="..\src\bsdfs\twosided.cpp">
 			</ClCompile>
 		<ClCompile Include="..\src\bsdfs\ward.cpp">

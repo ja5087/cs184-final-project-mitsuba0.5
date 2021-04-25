@@ -172,6 +172,9 @@ public:
                 && (bRec.component == -1 || bRec.component == 1) && measure == EDiscrete;
 
         Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
+        
+        MediumSamplingRecord dummy;
+        PhaseFunctionSamplingRecord pRec(dummy,bRec.wi,bRec.wo);
         Float phaseVal = m_phase->eval(pRec);
 
         // Account for internal reflections: R' = R + TRT + TR^3T + ..
@@ -199,6 +202,10 @@ public:
 
         Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
 
+        MediumSamplingRecord dummy;
+        PhaseFunctionSamplingRecord pRec(dummy, bRec.wi, bRec.wo);
+        Float pdf = m_phase->pdf(pRec);
+
         // Account for internal reflections: R' = R + TRT + TR^3T + ..
         if (R < 1)
             R += T*T * R / (1-R*R);
@@ -207,12 +214,12 @@ public:
             if (!sampleReflection || std::abs(dot(reflect(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
                 return 0.0f;
 
-            return sampleTransmission ? R : 1.0f;
+            return pdf * (sampleTransmission ? R : 1.0f);
         } else {
             if (!sampleTransmission || std::abs(dot(transmit(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
                 return 0.0f;
 
-            return sampleReflection ? 1-R : 1.0f;
+            return pdf * (sampleReflection ? 1-R : 1.0f);
         }
     }
 
@@ -224,6 +231,9 @@ public:
 
         Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
 
+        PhaseFunctionSamplingRecord pRec(MediumSamplingRecord(), bRec.wi, bRec.wo);
+        m_phase->sample(pRec, pdf, bRec.sampler);
+
         // Account for internal reflections: R' = R + TRT + TR^3T + ..
         if (R < 1)
             R += T*T * R / (1-R*R);
@@ -234,7 +244,7 @@ public:
                 bRec.sampledType = EDeltaReflection;
                 bRec.wo = reflect(bRec.wi);
                 bRec.eta = 1.0f;
-                pdf = R;
+                pdf *= R;
 
                 return m_specularReflectance->eval(bRec.its);
             } else {
@@ -242,7 +252,7 @@ public:
                 bRec.sampledType = ENull;
                 bRec.wo = transmit(bRec.wi);
                 bRec.eta = 1.0f;
-                pdf = 1-R;
+                pdf *= 1-R;
 
                 return m_specularTransmittance->eval(bRec.its);
             }
