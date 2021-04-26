@@ -208,6 +208,8 @@
 		</ClCompile>
 		<ClCompile Include="..\src\bsdfs\marschner.cpp">
 			<Filter>Source Files\bsdfs</Filter>
+		<ClCompile Include="..\src\bsdfs\mirror.cpp">
+			<Filter>Source Files\bsdfs</Filter>
 		</ClCompile>
 		<ClCompile Include="..\src\bsdfs\twosided.cpp">
 			<Filter>Source Files\bsdfs</Filter>

@@ -617,6 +617,8 @@
 			</ClCompile>
 		<ClCompile Include="..\src\bsdfs\marschner.cpp">
 			</ClCompile>
+		<ClCompile Include="..\src\bsdfs\mirror.cpp">
+			</ClCompile>
 		<ClCompile Include="..\src\bsdfs\twosided.cpp">
 			</ClCompile>
 		<ClCompile Include="..\src\bsdfs\ward.cpp">
