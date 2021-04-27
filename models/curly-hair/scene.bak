@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<scene version="0.5.0" >
+	<integrator type="path" >
+		<integer name="maxDepth" value="65" />
+		<boolean name="strictNormals" value="true" />
+	</integrator>
+	<sensor type="perspective" >
+		<float name="fov" value="35" />
+		<transform name="toWorld" >
+			<matrix value="0.999887 0.00390257 0.0145262 -0.234672 6.98571e-010 0.965755 -0.259457 16.5124 -0.0150413 0.259428 0.965645 -25.3482 0 0 0 1"/>
+		</transform>
+		<sampler type="sobol" >
+			<integer name="sampleCount" value="64" />
+		</sampler>
+		<film type="ldrfilm" >
+			<integer name="width" value="1024" />
+			<integer name="height" value="1024" />
+			<string name="fileFormat" value="png" />
+			<string name="pixelFormat" value="rgb" />
+			<float name="gamma" value="2.2" />
+			<boolean name="banner" value="false" />
+			<rfilter type="tent" />
+		</film>
+	</sensor>
+	<bsdf type="roughplastic" id="hair" >
+		<float name="alpha" value="0.2" />
+		<string name="distribution" value="ggx" />
+		<float name="intIOR" value="1.55" />
+		<float name="extIOR" value="1" />
+		<boolean name="nonlinear" value="false" />
+		<rgb name="diffuseReflectance" value="0.143016, 0.0156076, 1.80928e-005"/>
+	</bsdf>
+	<shape type="hair" >
+		<float name="radius" value="0.00559955" />
+		<string name="filename" value="models/hair.mitshair" />
+		<ref id="hair" />
+	</shape>
+	<emitter type="sunsky" >
+		<float name="turbidity" value="3" />
+		<vector name="sunDirection" x="0.19033" y="0.758426" z="-0.623349" />
+		<float name="skyScale" value="5" />
+		<float name="sunScale" value="19.0912" />
+		<float name="sunRadiusScale" value="37.9165" />
+	</emitter>
+</scene>
