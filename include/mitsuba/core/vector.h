@@ -526,6 +526,11 @@ template <typename T> struct TVector3 {
         return *this;
     }
 
+    TVector3 &operator*=(TVector3 v) {
+        x *= v.x; y *= v.y; z *= v.z;
+        return *this;
+    }
+
     /// Return a negated version of the vector
     TVector3 operator-() const {
         return TVector3(-x, -y, -z);

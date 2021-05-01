@@ -89,6 +89,7 @@ public:
                 "refraction must be positive!");
 
         m_eta = intIOR / extIOR;
+        _sigmaA = Vector3(0.22);
 
         m_specularReflectance = new ConstantSpectrumTexture(
             props.getSpectrum("specularReflectance", Spectrum(1.0f)));
@@ -203,23 +204,65 @@ public:
         return std::exp(-theta*theta/(2.0f*beta*beta))/(std::sqrt(2.0f*M_PI_FLT)*beta);
     }
 
-    // static float M(float v, float sinThetaI, float sinThetaO, float cosThetaI, float cosThetaO)
-    // {
-    //     float a = cosThetaI*cosThetaO/v;
-    //     float b = sinThetaI*sinThetaO/v;
+    static float D(float beta, float phi) {
+        float result = 0.0f;
+        float delta;
+        float shift = 0.0f;
+        do {
+            delta = g(beta, phi + shift) + g(beta, phi - shift - 2 * M_PI_FLT);
+            result += delta;
+            shift += 2 * M_PI_FLT;
+        } while (delta > 1e-4f);
+        return result;
+    }
 
-    //     if (v < 0.1f)
-    //         // More numerically stable evaluation for small roughnesses
-    //         // See https://publons.com/discussion/12/
-    //         return std::exp(-b + logI0(a) - 1.0f/v + 0.6931f + std::log(1.0f/(2.0f*v)));
-    //     else
-    //         return std::exp(-b)*I0(a)/(2.0f*v*std::sinh(1.0f/v));
-    // }
+    static float Phi(float gammaI, float gammaT, int p) {
+        return 2.0f*p*gammaT - 2.0f*gammaI + p * M_PI_FLT;
+    }
+
+    float NrIntegrand(float beta, float halfWiDotWo, float phi, float h) {
+        float gammaI = std::asin(math::clamp(h, -1.0f, 1.0f));
+        float deltaPhi = phi + 2.0f*gammaI;
+        deltaPhi = std::fmod(deltaPhi, 2.0 * M_PI_FLT);
+        if (deltaPhi < 0.0f)
+            deltaPhi += 2.0 * M_PI_FLT;
+
+        return D(beta, deltaPhi)*fresnelDielectricExt(1.0f/m_eta, halfWiDotWo);
+    }
+
+    static Vector3f exp(Vector3f v) {
+        return Vector3f(std::exp(v.x), std::exp(v.y), std::exp(v.z));
+    }
+
+    Vector3f NpIntegrand(float beta, float cosThetaD, float phi, int p, float h) {
+        float iorPrime = std::sqrt(m_eta*m_eta - (1.0f - cosThetaD*cosThetaD))/cosThetaD;
+        float cosThetaT = std::sqrt(1.0f - (1.0f - cosThetaD*cosThetaD)*(1.0f/(m_eta * m_eta)));
+        Vector3f sigmaAPrime = _sigmaA/cosThetaT;
+
+        float gammaI = std::asin(math::clamp(h, -1.0f, 1.0f));
+        float gammaT = std::asin(math::clamp(h/iorPrime, -1.0f, 1.0f));
+        // The correct internal path length (the one in d'Eon et al.'s paper
+        // as well as Marschner et al.'s paper is wrong).
+        // The correct factor is also mentioned in "Light Scattering from Filaments", eq. (20)
+        float l = 2.0f*std::cos(gammaT);
+
+        float f = fresnelDielectricExt(1.0f/m_eta, cosThetaD*trigInverse(h));
+        Vector3f T = exp(-sigmaAPrime*l);
+        Vector3f Aph = (1.0f - f)*(1.0f - f) * T;
+        for (int i = 1; i < p; ++i)
+            Aph *= f*T;
+
+        float deltaPhi = phi - Phi(gammaI, gammaT, p);
+        deltaPhi = std::fmod(deltaPhi, 2.0 * M_PI_FLT);
+        if (deltaPhi < 0.0f)
+            deltaPhi += 2 * M_PI_FLT;
+
+        return Aph*D(beta, deltaPhi);
+    }
 
     static float M(float beta, float theta, float alpha) {
         return g(beta, theta - alpha);
     }
-
 
     Spectrum eval(const BSDFSamplingRecord &bRec, EMeasure measure) const {
         bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
@@ -260,8 +303,8 @@ public:
         float thetaI = std::atan2(bRec.wi.z, bRec.wi.x);
         float thetaO = std::atan2(bRec.wo.z, bRec.wi.x);
 
-        float phiI = std::atan2(math::safe_sqrt(bRec.wi.x * bRec.wi.x + bRec.wi.z * bRec.wi.z), bRec.wi.y)
-        float phiO = std::atan2(math::safe_sqrt(bRec.wo.x * bRec.wo.x + bRec.wo.z * bRec.wo.z), bRec.wo.y)
+        float phiI = std::atan2(math::safe_sqrt(bRec.wi.x * bRec.wi.x + bRec.wi.z * bRec.wi.z), bRec.wi.y);
+        float phiO = std::atan2(math::safe_sqrt(bRec.wo.x * bRec.wo.x + bRec.wo.z * bRec.wo.z), bRec.wo.y);
 
         float thetaD = (thetaO - thetaI)*0.5f, thetaH = (thetaO + thetaI)*0.5f;
         float cosThetaD = std::cos(thetaD);
@@ -448,15 +491,16 @@ public:
 
     MTS_DECLARE_CLASS()
 private:
-    Float m_eta;
     ref<Texture> m_specularTransmittance;
     ref<Texture> m_specularReflectance;
     ref<PhaseFunction> m_phase;
+    float m_eta;
     float _betaR;
     float _betaTT;
     float _betaTRT;
     float _roughness;
     float _scaleAngleRad;
+    Vector3 _sigmaA;
 };
 
 /* Fake glass shader -- it is really hopeless to visualize
