@@ -280,9 +280,9 @@ public:
         float MTT  = M(_betaTT, thetaH, _scaleAngleRad * -0.5f);
         float MTRT = M(_betaTRT, thetaH, _scaleAngleRad * -1.5f);
 
-        // return   MR*  _nR->eval(phi, cosThetaD)
-        //      +  MTT* _nTT->eval(phi, cosThetaD)
-        //      + MTRT*_nTRT->eval(phi, cosThetaD);
+        return   MR*  _nR->eval(phi, cosThetaD)
+                +  MTT* _nTT->eval(phi, cosThetaD)
+                + MTRT*_nTRT->eval(phi, cosThetaD);
     }
 
     Float pdf(const BSDFSamplingRecord &bRec, EMeasure measure) const {
