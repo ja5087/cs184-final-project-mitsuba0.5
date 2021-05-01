@@ -25,6 +25,7 @@
 #include <mitsuba/hw/basicshader.h>
 #include "../medium/materials.h"
 #include "ior.h"
+#include "math.h"
 
 MTS_NAMESPACE_BEGIN
 
@@ -93,6 +94,13 @@ public:
             props.getSpectrum("specularReflectance", Spectrum(1.0f)));
         m_specularTransmittance = new ConstantSpectrumTexture(
             props.getSpectrum("specularTransmittance", Spectrum(1.0f)));
+
+        _roughness = 0.1f;
+        // _betaR   = std::max(M_PI_FLT * 0.5f * _roughness, 0.04f);
+        _betaR   = 0.1f;
+        _betaTT  = _betaR*0.5f;
+        _betaTRT = _betaR*2.0f;
+        _scaleAngleRad = -0.1f;
     }
 
     Marschner(Stream *stream, InstanceManager *manager)
@@ -165,19 +173,11 @@ public:
         return -wi;
     }
 
-    static inline float trigInverse(float x)
-    {
+    static inline float trigInverse(float x) {
         return std::min(std::sqrt(std::max(1.0f - x*x, 0.0f)), 1.0f);
     }
 
-    template<typename T>
-    static T clamp(T val, T minVal, T maxVal)
-    {
-        return std::min(std::max(val, minVal), maxVal);
-    }
-
-    static float I0(float x)
-    {
+    static float I0(float x) {
         float result = 1.0f;
         float xSq = x*x;
         float xi = xSq;
@@ -190,27 +190,34 @@ public:
         return result;
     }
 
-    static float logI0(float x)
-    {
+    static float logI0(float x) {
         if (x > 12.0f)
             // More stable evaluation of log(I0(x))
             // See also https://publons.com/discussion/12/
-            return x + 0.5f*(std::log(1.0f/(3.1415926536f * 2.0f*x)) + 1.0f/(8.0f*x));
+            return x + 0.5f*(std::log(1.0f/(M_PI_FLT * 2.0f*x)) + 1.0f/(8.0f*x));
         else
             return std::log(I0(x));
     }
 
-    static float M(float v, float sinThetaI, float sinThetaO, float cosThetaI, float cosThetaO)
-{
-        float a = cosThetaI*cosThetaO/v;
-        float b = sinThetaI*sinThetaO/v;
+    static float g(float beta, float theta) {
+        return std::exp(-theta*theta/(2.0f*beta*beta))/(std::sqrt(2.0f*M_PI_FLT)*beta);
+    }
 
-        if (v < 0.1f)
-            // More numerically stable evaluation for small roughnesses
-            // See https://publons.com/discussion/12/
-            return std::exp(-b + logI0(a) - 1.0f/v + 0.6931f + std::log(1.0f/(2.0f*v)));
-        else
-            return std::exp(-b)*I0(a)/(2.0f*v*std::sinh(1.0f/v));
+    // static float M(float v, float sinThetaI, float sinThetaO, float cosThetaI, float cosThetaO)
+    // {
+    //     float a = cosThetaI*cosThetaO/v;
+    //     float b = sinThetaI*sinThetaO/v;
+
+    //     if (v < 0.1f)
+    //         // More numerically stable evaluation for small roughnesses
+    //         // See https://publons.com/discussion/12/
+    //         return std::exp(-b + logI0(a) - 1.0f/v + 0.6931f + std::log(1.0f/(2.0f*v)));
+    //     else
+    //         return std::exp(-b)*I0(a)/(2.0f*v*std::sinh(1.0f/v));
+    // }
+
+    static float M(float beta, float theta, float alpha) {
+        return g(beta, theta - alpha);
     }
 
 
@@ -247,14 +254,14 @@ public:
 
         float sinThetaI = bRec.wi.y, sinThetaO = bRec.wo.y;
         float cosTheta0 = trigInverse(sinThetaO);
-        float thetaI = std::asin(clamp(sinThetaI, -1.0f, 1.0f));
-        float thetaO = std::asin(clamp(sinThetaO, -1.0f, 1.0f));
-        float thetaD = (thetaO - thetaI)*0.5f;
+        float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
+        float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
+        float thetaD = (thetaO - thetaI)*0.5f, thetaH = (thetaO + thetaI)*0.5f;
         float cosThetaD = std::cos(thetaD);
 
         float phi = std::atan2(bRec.wo.x, bRec.wo.z);
         if (phi < 0.0f)
-            phi += 3.1415926536f * 2.0f;
+            phi += M_PI_FLT * 2.0f;
 
         // Lobe shift due to hair scale tilt, following the values in
         // "Importance Sampling for Physically-Based Hair Fiber Models"
@@ -265,9 +272,13 @@ public:
         // float thetaITRT = thetaI + 4.0f*_scaleAngleRad;
 
         // Evaluate longitudinal scattering functions
-        // float MR   = M(_vR,   std::sin(thetaIR),   sinThetaO, std::cos(thetaIR),   cosThetaO);
-        // float MTT  = M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
-        // float MTRT = M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
+        // float MR   = M(_vR,   std::sin(thetaH),   sinThetaO, std::cos(thetaH),  cosThetaO);
+        // float MTT  = M(_vTT,  std::sin(thetaH),  sinThetaO, std::cos(thetaH),  cosThetaO);
+        // float MTRT = M(_vTRT, std::sin(thetaH), sinThetaO, std::cos(thetaH), cosThetaO);
+
+        float MR   = M(_betaR, thetaH, _scaleAngleRad);
+        float MTT  = M(_betaTT, thetaH, _scaleAngleRad * -0.5f);
+        float MTRT = M(_betaTRT, thetaH, _scaleAngleRad * -1.5f);
 
         // return   MR*  _nR->eval(phi, cosThetaD)
         //      +  MTT* _nTT->eval(phi, cosThetaD)
@@ -434,6 +445,11 @@ private:
     ref<Texture> m_specularTransmittance;
     ref<Texture> m_specularReflectance;
     ref<PhaseFunction> m_phase;
+    float _betaR;
+    float _betaTT;
+    float _betaTRT;
+    float _roughness;
+    float _scaleAngleRad;
 };
 
 /* Fake glass shader -- it is really hopeless to visualize
