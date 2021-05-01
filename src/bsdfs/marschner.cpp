@@ -165,6 +165,55 @@ public:
         return -wi;
     }
 
+    static inline float trigInverse(float x)
+    {
+        return std::min(std::sqrt(std::max(1.0f - x*x, 0.0f)), 1.0f);
+    }
+
+    template<typename T>
+    static T clamp(T val, T minVal, T maxVal)
+    {
+        return std::min(std::max(val, minVal), maxVal);
+    }
+
+    static float I0(float x)
+    {
+        float result = 1.0f;
+        float xSq = x*x;
+        float xi = xSq;
+        float denom = 4.0f;
+        for (int i = 1; i <= 10; ++i) {
+            result += xi/denom;
+            xi *= xSq;
+            denom *= 4.0f*float((i + 1)*(i + 1));
+        }
+        return result;
+    }
+
+    static float logI0(float x)
+    {
+        if (x > 12.0f)
+            // More stable evaluation of log(I0(x))
+            // See also https://publons.com/discussion/12/
+            return x + 0.5f*(std::log(1.0f/(3.1415926536f * 2.0f*x)) + 1.0f/(8.0f*x));
+        else
+            return std::log(I0(x));
+    }
+
+    static float M(float v, float sinThetaI, float sinThetaO, float cosThetaI, float cosThetaO)
+{
+        float a = cosThetaI*cosThetaO/v;
+        float b = sinThetaI*sinThetaO/v;
+
+        if (v < 0.1f)
+            // More numerically stable evaluation for small roughnesses
+            // See https://publons.com/discussion/12/
+            return std::exp(-b + logI0(a) - 1.0f/v + 0.6931f + std::log(1.0f/(2.0f*v)));
+        else
+            return std::exp(-b)*I0(a)/(2.0f*v*std::sinh(1.0f/v));
+    }
+
+
     Spectrum eval(const BSDFSamplingRecord &bRec, EMeasure measure) const {
         bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
                 && (bRec.component == -1 || bRec.component == 0) && measure == EDiscrete;
@@ -192,6 +241,37 @@ public:
 
             return m_specularTransmittance->eval(bRec.its) * (1 - R) * phaseVal;
         }
+
+        // if (!event.requestedLobe.test(BsdfLobes::GlossyLobe))
+        //     return Vec3f(0.0f);
+
+        float sinThetaI = bRec.wi.y, sinThetaO = bRec.wo.y;
+        float cosTheta0 = trigInverse(sinThetaO);
+        float thetaI = std::asin(clamp(sinThetaI, -1.0f, 1.0f));
+        float thetaO = std::asin(clamp(sinThetaO, -1.0f, 1.0f));
+        float thetaD = (thetaO - thetaI)*0.5f;
+        float cosThetaD = std::cos(thetaD);
+
+        float phi = std::atan2(bRec.wo.x, bRec.wo.z);
+        if (phi < 0.0f)
+            phi += 3.1415926536f * 2.0f;
+
+        // Lobe shift due to hair scale tilt, following the values in
+        // "Importance Sampling for Physically-Based Hair Fiber Models"
+        // rather than the earlier paper by Marschner et al. I believe
+        // these are slightly more accurate.
+        // float thetaIR   = thetaI - 2.0f*_scaleAngleRad;
+        // float thetaITT  = thetaI +      _scaleAngleRad;
+        // float thetaITRT = thetaI + 4.0f*_scaleAngleRad;
+
+        // Evaluate longitudinal scattering functions
+        // float MR   = M(_vR,   std::sin(thetaIR),   sinThetaO, std::cos(thetaIR),   cosThetaO);
+        // float MTT  = M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
+        // float MTRT = M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
+
+        // return   MR*  _nR->eval(phi, cosThetaD)
+        //      +  MTT* _nTT->eval(phi, cosThetaD)
+        //      + MTRT*_nTRT->eval(phi, cosThetaD);
     }
 
     Float pdf(const BSDFSamplingRecord &bRec, EMeasure measure) const {
