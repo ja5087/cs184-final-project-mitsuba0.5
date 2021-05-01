@@ -252,10 +252,17 @@ public:
         // if (!event.requestedLobe.test(BsdfLobes::GlossyLobe))
         //     return Vec3f(0.0f);
 
-        float sinThetaI = bRec.wi.y, sinThetaO = bRec.wo.y;
-        float cosTheta0 = trigInverse(sinThetaO);
-        float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
-        float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
+        // float sinThetaI = bRec.wi.y, sinThetaO = bRec.wo.y;
+        // float cosTheta0 = trigInverse(sinThetaO);
+        // float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
+        // float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
+
+        float thetaI = std::atan2(bRec.wi.z, bRec.wi.x);
+        float thetaO = std::atan2(bRec.wo.z, bRec.wi.x);
+
+        float phiI = std::atan2(math::safe_sqrt(bRec.wi.x * bRec.wi.x + bRec.wi.z * bRec.wi.z), bRec.wi.y)
+        float phiO = std::atan2(math::safe_sqrt(bRec.wo.x * bRec.wo.x + bRec.wo.z * bRec.wo.z), bRec.wo.y)
+
         float thetaD = (thetaO - thetaI)*0.5f, thetaH = (thetaO + thetaI)*0.5f;
         float cosThetaD = std::cos(thetaD);
 
