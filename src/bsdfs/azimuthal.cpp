@@ -23,6 +23,8 @@ MTS_NAMESPACE_BEGIN
 
 class Azimuthal {
 public:
+    Azimuthal(std::unique_ptr<Vector3f[]> table);
+
     static const int AzimuthalResolution = 64;
 
     void sample(float cosThetaD, float xi, float &phi, float &pdf) const

@@ -520,6 +520,12 @@ template <typename T> struct TVector3 {
         return TVector3(x*f, y*f, z*f);
     }
 
+
+    /// Multiply the vector by the given scalar and return the result
+    TVector3 operator*(TVector3 v) const {
+        return TVector3(x*v.x, y*v.y, z*v.z);
+    }
+
     /// Multiply the vector by the given scalar
     TVector3 &operator*=(T f) {
         x *= f; y *= f; z *= f;

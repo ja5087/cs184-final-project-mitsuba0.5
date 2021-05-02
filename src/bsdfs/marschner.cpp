@@ -27,6 +27,7 @@
 #include "ior.h"
 #include "math.h"
 #include "azimuthal.cpp"
+#include "gausssexylingerie.cpp"
 
 MTS_NAMESPACE_BEGIN
 
@@ -420,6 +421,105 @@ public:
         return Spectrum(0.0f);
     }
 
+    void precomputeAzimuthalDistributions() {
+        const int Resolution = Azimuthal::AzimuthalResolution;
+        std::unique_ptr<Vector3f[]> valuesR  (new Vector3f[Resolution*Resolution]);
+        std::unique_ptr<Vector3f[]> valuesTT (new Vector3f[Resolution*Resolution]);
+        std::unique_ptr<Vector3f[]> valuesTRT(new Vector3f[Resolution*Resolution]);
+
+        // Ideally we could simply make this a constexpr, but MSVC does not support that yet (boo!)
+        #define NumPoints 140
+
+        GaussLegendre<NumPoints> integrator;
+        const auto points = integrator.points();
+        const auto weights = integrator.weights();
+
+        // Cache the gammaI across all integration points
+        std::array<float, NumPoints> gammaIs;
+        for (int i = 0; i < NumPoints; ++i)
+            gammaIs[i] = std::asin(points[i]);
+
+        // Precompute the Gaussian detector and sample it into three 1D tables.
+        // This is the only part of the precomputation that is actually approximate.
+        // 2048 samples are enough to support the lowest roughness that the BCSDF
+        // can reliably simulate
+        const int NumGaussianSamples = 2048;
+        std::unique_ptr<float[]> Ds[3];
+        for (int p = 0; p < 3; ++p) {
+            Ds[p].reset(new float[NumGaussianSamples]);
+            for (int i = 0; i < NumGaussianSamples; ++i)
+                Ds[p][i] = D(_betaR, i/(NumGaussianSamples - 1.0f) * 2 * M_PI_FLT);
+        }
+
+        // Simple wrapped linear interpolation of the precomputed table
+        auto approxD = [&](int p, float phi) {
+            float u = std::abs(phi*(1.0 / (2 * M_PI_FLT) *(NumGaussianSamples - 1)));
+            int x0 = int(u);
+            int x1 = x0 + 1;
+            u -= x0;
+            return Ds[p][x0 % NumGaussianSamples]*(1.0f - u) + Ds[p][x1 % NumGaussianSamples]*u;
+        };
+
+        // Here follows the actual precomputation of the azimuthal scattering functions
+        // The scattering functions are parametrized with the azimuthal angle phi,
+        // and the cosine of the half angle, cos(thetaD).
+        // This parametrization makes the azimuthal function relatively smooth and allows using
+        // really low resolutions for the table (64x64 in this case) without any visual
+        // deviation from ground truth, even at the lowest supported roughness setting
+        for (int y = 0; y < Resolution; ++y) {
+            float cosHalfAngle = y/(Resolution - 1.0f);
+
+            // Precompute reflection Fresnel factor and reduced absorption coefficient
+            float iorPrime = std::sqrt(m_eta*m_eta - (1.0f - cosHalfAngle*cosHalfAngle))/cosHalfAngle;
+            float cosThetaT = std::sqrt(1.0f - (1.0f - cosHalfAngle*cosHalfAngle)*(1.0f/m_eta)*(1.0f/m_eta));
+            Vector3f sigmaAPrime = _sigmaA/cosThetaT;
+
+            // Precompute gammaT, f_t and internal absorption across all integration points
+            std::array<float, NumPoints> fresnelTerms, gammaTs;
+            std::array<Vector3f, NumPoints> absorptions;
+            for (int i = 0; i < NumPoints; ++i) {
+                gammaTs[i] = std::asin(math::clamp(points[i]/iorPrime, -1.0f, 1.0f));
+                fresnelTerms[i] = fresnelDielectricExt(1.0f/m_eta, cosHalfAngle*std::cos(gammaIs[i]));
+                absorptions[i] = exp(-sigmaAPrime*2.0f*std::cos(gammaTs[i]));
+            }
+
+            for (int phiI = 0; phiI < Resolution; ++phiI) {
+                float phi = M_PI_FLT * 2 *phiI/(Resolution - 1.0f);
+
+                float integralR = 0.0f;
+                Vector3f integralTT(0.0f);
+                Vector3f integralTRT(0.0f);
+
+                // Here follows the integration across the fiber width, h.
+                // Since we were able to precompute most of the factors that
+                // are constant w.r.t phi for a given h,
+                // we don't have to do much work here.
+                for (int i = 0; i < integrator.numSamples(); ++i) {
+                    float fR = fresnelTerms[i];
+                    Vector3f T = absorptions[i];
+
+                    float AR = fR;
+                    Vector3f ATT = (1.0f - fR)*(1.0f - fR)*T;
+                    Vector3f ATRT = ATT*fR*T;
+
+                    integralR   += weights[i]*approxD(0, phi - Phi(gammaIs[i], gammaTs[i], 0))*AR;
+                    integralTT  += weights[i]*approxD(1, phi - Phi(gammaIs[i], gammaTs[i], 1))*ATT;
+                    integralTRT += weights[i]*approxD(2, phi - Phi(gammaIs[i], gammaTs[i], 2))*ATRT;
+                }
+
+                valuesR  [phiI + y*Resolution] = Vector3f(0.5f*integralR);
+                valuesTT [phiI + y*Resolution] = 0.5f*integralTT;
+                valuesTRT[phiI + y*Resolution] = 0.5f*integralTRT;
+            }
+        }
+
+        // Hand the values off to the helper class to construct sampling CDFs and so forth
+        _nR  .reset(new Azimuthal(std::move(valuesR)));
+        _nTT .reset(new Azimuthal(std::move(valuesTT)));
+        _nTRT.reset(new Azimuthal(std::move(valuesTRT)));
+    }
+
+
     Float getEta() const {
         /* The rrelative IOR across this interface is 1, since the internal
            material is thin: it begins and ends here. */
@@ -456,6 +556,7 @@ private:
     float _roughness;
     float _scaleAngleRad;
     Vector3f _sigmaA;
+    std::unique_ptr<Azimuthal> _nR, _nTT, _nTRT;
 };
 
 /* Fake glass shader -- it is really hopeless to visualize
