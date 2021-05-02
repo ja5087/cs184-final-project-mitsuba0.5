@@ -26,55 +26,10 @@
 #include "../medium/materials.h"
 #include "ior.h"
 #include "math.h"
+#include "azimuthal.cpp"
 
 MTS_NAMESPACE_BEGIN
 
-/*!\plugin{thindielectric}{Thin dielectric material}
- * \order{4}
- * \parameters{
- *     \parameter{intIOR}{\Float\Or\String}{Interior index of refraction specified
- *      numerically or using a known material name. \default{\texttt{bk7} / 1.5046}}
- *     \parameter{extIOR}{\Float\Or\String}{Exterior index of refraction specified
- *      numerically or using a known material name. \default{\texttt{air} / 1.000277}}
- *     \parameter{specular\showbreak Reflectance}{\Spectrum\Or\Texture}{Optional
- *         factor that can be used to modulate the specular reflection component. Note
- *         that for physical realism, this parameter should never be touched. \default{1.0}}
- *     \parameter{specular\showbreak Transmittance}{\Spectrum\Or\Texture}{Optional
- *         factor that can be used to modulate the specular transmission component. Note
- *         that for physical realism, this parameter should never be touched. \default{1.0}}
- * }
- *
- * This plugin models a \emph{thin} dielectric material that is embedded inside another
- * dielectric---for instance, glass surrounded by air. The interior of the material
- * is assumed to be so thin that its effect on transmitted rays is negligible,
- * Hence, light exits such a material without any form of angular deflection
- * (though there is still specular reflection).
- *
- * This model should be used for things like glass windows that were modeled using only a
- * single sheet of triangles or quads. On the other hand, when the window consists of
- * proper closed geometry, \pluginref{dielectric} is the right choice. This is illustrated below:
- *
- * \begin{figure}[h]
- * \setcounter{subfigure}{0}
- * \centering
- * \hfill
- * \subfloat[The \pluginref{dielectric} plugin models a single transition from one index of refraction to another]
- *     {\includegraphics[width=4.5cm]{images/bsdf_dielectric_figure.pdf}}\hfill
- * \subfloat[The \pluginref{thindielectric} plugin models a pair of interfaces causing a transient index of refraction change]
- *      {\includegraphics[width=4.5cm]{images/bsdf_thindielectric_figure.pdf}}\hfill
- * \subfloat[Windows modeled using a single sheet of geometry are the most frequent application of this BSDF]
- *      {\fbox{\includegraphics[width=4.5cm]{images/bsdf_thindielectric_window.jpg}}}\hspace*\fill
- * \caption{
- *     \label{fig:thindielectric-diff}
- *     An illustration of the difference between the \pluginref{dielectric} and \pluginref{thindielectric} plugins}
- * \end{figure}
- *
- * The implementation correctly accounts for multiple internal reflections
- * inside the thin dielectric at \emph{no significant extra cost}, i.e. paths
- * of the type $R, TRT, TR^3T, ..$ for reflection and $TT, TR^2, TR^4T, ..$ for
- * refraction, where $T$ and $R$ denote individual reflection and refraction
- * events, respectively.
- */
 class Marschner : public BSDF {
 public:
     Marschner(const Properties &props) : BSDF(props) {
@@ -89,7 +44,7 @@ public:
                 "refraction must be positive!");
 
         m_eta = intIOR / extIOR;
-        _sigmaA = Vector3(0.22);
+        _sigmaA = Vector3f(0.22);
 
         m_specularReflectance = new ConstantSpectrumTexture(
             props.getSpectrum("specularReflectance", Spectrum(1.0f)));
@@ -165,12 +120,12 @@ public:
     }
 
     /// Reflection in local coordinates
-    inline Vector reflect(const Vector &wi) const {
-        return Vector(-wi.x, -wi.y, wi.z);
+    inline Vector3f reflect(const Vector3f &wi) const {
+        return Vector3f(-wi.x, -wi.y, wi.z);
     }
 
     /// Transmission in local coordinates
-    inline Vector transmit(const Vector &wi) const {
+    inline Vector3f transmit(const Vector3f &wi) const {
         return -wi;
     }
 
@@ -500,7 +455,7 @@ private:
     float _betaTRT;
     float _roughness;
     float _scaleAngleRad;
-    Vector3 _sigmaA;
+    Vector3f _sigmaA;
 };
 
 /* Fake glass shader -- it is really hopeless to visualize
