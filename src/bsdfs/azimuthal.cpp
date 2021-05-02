@@ -67,3 +67,5 @@ private:
     std::unique_ptr<Vector3f[]> _table;
     std::unique_ptr<InterpolatedDistribution1D> _sampler;
 };
+
+MTS_NAMESPACE_END
