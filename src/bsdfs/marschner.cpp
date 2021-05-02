@@ -23,17 +23,15 @@
 #include <mitsuba/render/medium.h>
 #include <mitsuba/core/plugin.h>
 #include <mitsuba/hw/basicshader.h>
-#include <iostream>
-#include <array>
 #include "../medium/materials.h"
 #include "ior.h"
 #include "math.h"
+#include <iostream>
+#include <array>
 #include "azimuthal.cpp"
 #include "gausssexylingerie.hpp"
 
 MTS_NAMESPACE_BEGIN
-
-using namespace mitsuba;
 
 class Marschner : public BSDF {
 public:
@@ -62,6 +60,10 @@ public:
         _betaTT  = _betaR*0.5f;
         _betaTRT = _betaR*2.0f;
         _scaleAngleRad = -0.1f;
+        precomputeAzimuthalDistributions();
+        _vR = _betaR * _betaR;
+        _vTT = _betaTT * _betaTT;
+        _vTRT = _betaTRT * _betaTRT;
     }
 
     Marschner(Stream *stream, InstanceManager *manager)
@@ -132,10 +134,6 @@ public:
     /// Transmission in local coordinates
     inline Vector3f transmit(const Vector3f &wi) const {
         return -wi;
-    }
-
-    static inline float trigInverse(float x) {
-        return std::min(std::sqrt(std::max(1.0f - x*x, 0.0f)), 1.0f);
     }
 
     static float I0(float x) {
@@ -220,9 +218,21 @@ public:
         return Aph*D(beta, deltaPhi);
     }
 
-    static float M(float beta, float theta, float alpha) {
-        return g(beta, theta - alpha);
+    // static float M(float beta, float theta, float alpha) {
+    //     return g(beta, theta - alpha);
+    // }
+    static float M(float v, float sinThetaI, float sinThetaO, float cosThetaI, float cosThetaO) {
+        float a = cosThetaI*cosThetaO/v;
+        float b = sinThetaI*sinThetaO/v;
+
+        if (v < 0.1f)
+            // More numerically stable evaluation for small roughnesses
+            // See https://publons.com/discussion/12/
+            return std::exp(-b + logI0(a) - 1.0f/v + 0.6931f + std::log(1.0f/(2.0f*v)));
+        else
+            return std::exp(-b)*I0(a)/(2.0f*v*std::sinh(1.0f/v));
     }
+
 
     Spectrum eval(const BSDFSamplingRecord &bRec, EMeasure measure) const {
         // bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
@@ -255,16 +265,16 @@ public:
         // if (!event.requestedLobe.test(BsdfLobes::GlossyLobe))
         //     return Vec3f(0.0f);
 
-        // float sinThetaI = bRec.wi.y, sinThetaO = bRec.wo.y;
-        // float cosTheta0 = trigInverse(sinThetaO);
-        // float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
-        // float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
+        float sinThetaI = bRec.wi.y, sinThetaO = bRec.wo.y;
+        float cosThetaO = trigInverse(sinThetaO);
+        float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
+        float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
 
-        float thetaI = std::atan2(bRec.wi.z, bRec.wi.x);
-        float thetaO = std::atan2(bRec.wo.z, bRec.wi.x);
+        // float thetaI = std::atan2(bRec.wi.z, bRec.wi.x);
+        // float thetaO = std::atan2(bRec.wo.z, bRec.wi.x);
 
-        float phiI = std::atan2(math::safe_sqrt(bRec.wi.x * bRec.wi.x + bRec.wi.z * bRec.wi.z), bRec.wi.y);
-        float phiO = std::atan2(math::safe_sqrt(bRec.wo.x * bRec.wo.x + bRec.wo.z * bRec.wo.z), bRec.wo.y);
+        // float phiI = std::atan2(math::safe_sqrt(bRec.wi.x * bRec.wi.x + bRec.wi.z * bRec.wi.z), bRec.wi.y);
+        // float phiO = std::atan2(math::safe_sqrt(bRec.wo.x * bRec.wo.x + bRec.wo.z * bRec.wo.z), bRec.wo.y);
 
         float thetaD = (thetaO - thetaI)*0.5f, thetaH = (thetaO + thetaI)*0.5f;
         float cosThetaD = std::cos(thetaD);
@@ -277,193 +287,218 @@ public:
         // "Importance Sampling for Physically-Based Hair Fiber Models"
         // rather than the earlier paper by Marschner et al. I believe
         // these are slightly more accurate.
-        // float thetaIR   = thetaI - 2.0f*_scaleAngleRad;
-        // float thetaITT  = thetaI +      _scaleAngleRad;
-        // float thetaITRT = thetaI + 4.0f*_scaleAngleRad;
+        float thetaIR   = thetaI - 2.0f*_scaleAngleRad;
+        float thetaITT  = thetaI +      _scaleAngleRad;
+        float thetaITRT = thetaI + 4.0f*_scaleAngleRad;
 
         // Evaluate longitudinal scattering functions
         // float MR   = M(_vR,   std::sin(thetaH),   sinThetaO, std::cos(thetaH),  cosThetaO);
         // float MTT  = M(_vTT,  std::sin(thetaH),  sinThetaO, std::cos(thetaH),  cosThetaO);
         // float MTRT = M(_vTRT, std::sin(thetaH), sinThetaO, std::cos(thetaH), cosThetaO);
 
-        float MR   = M(_betaR, thetaH, _scaleAngleRad);
-        float MTT  = M(_betaTT, thetaH, _scaleAngleRad * -0.5f);
-        float MTRT = M(_betaTRT, thetaH, _scaleAngleRad * -1.5f);
+        // float MR   = M(_betaR, thetaH, _scaleAngleRad);
+        // float MTT  = M(_betaTT, thetaH, _scaleAngleRad * -0.5f);
+        // float MTRT = M(_betaTRT, thetaH, _scaleAngleRad * -1.5f);
 
-        // return   MR*  _nR->eval(phi, cosThetaD)
-        //         +  MTT* _nTT->eval(phi, cosThetaD)
-        //         + MTRT*_nTRT->eval(phi, cosThetaD);
-        cout << "---------------ITS WORKING!!!!!!!-------------" << endl;
-        return Spectrum(MR * 0.3f + MTT * 0.4f + MTRT * 0.5f);
+        float MR   = M(_vR,   std::sin(thetaIR),   sinThetaO, std::cos(thetaIR),   cosThetaO);
+        float MTT  = M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
+        float MTRT = M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
+
+        Vector3f temp = MR*  _nR->eval(phi, cosThetaD)
+                +  MTT* _nTT->eval(phi, cosThetaD)
+                + MTRT*_nTRT->eval(phi, cosThetaD);
+
+        float value[3] = {temp.x, temp.y, temp.z};
+        return Spectrum(value);
+    }
+    
+    static inline float trigInverse(float x) {
+        return std::min(std::sqrt(std::max(1.0f - x*x, 0.0f)), 1.0f);
     }
 
     Float pdf(const BSDFSamplingRecord &bRec, EMeasure measure) const {
-        bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
-                && (bRec.component == -1 || bRec.component == 0) && measure == EDiscrete;
-        bool sampleTransmission = (bRec.typeMask & ENull)
-                && (bRec.component == -1 || bRec.component == 1) && measure == EDiscrete;
+        // bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
+        //         && (bRec.component == -1 || bRec.component == 0) && measure == EDiscrete;
+        // bool sampleTransmission = (bRec.typeMask & ENull)
+        //         && (bRec.component == -1 || bRec.component == 1) && measure == EDiscrete;
 
-        Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
+        // Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
 
-        MediumSamplingRecord dummy;
-        PhaseFunctionSamplingRecord pRec(dummy, bRec.wi, bRec.wo);
-        Float pdf = m_phase->pdf(pRec);
+        // MediumSamplingRecord dummy;
+        // PhaseFunctionSamplingRecord pRec(dummy, bRec.wi, bRec.wo);
+        // Float pdf = m_phase->pdf(pRec);
 
-        // Account for internal reflections: R' = R + TRT + TR^3T + ..
-        if (R < 1)
-            R += T*T * R / (1-R*R);
+        // // Account for internal reflections: R' = R + TRT + TR^3T + ..
+        // if (R < 1)
+        //     R += T*T * R / (1-R*R);
 
-        if (Frame::cosTheta(bRec.wi) * Frame::cosTheta(bRec.wo) >= 0) {
-            if (!sampleReflection || std::abs(dot(reflect(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
-                return 0.0f;
+        // if (Frame::cosTheta(bRec.wi) * Frame::cosTheta(bRec.wo) >= 0) {
+        //     if (!sampleReflection || std::abs(dot(reflect(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
+        //         return 0.0f;
 
-            return pdf * (sampleTransmission ? R : 1.0f);
-        } else {
-            if (!sampleTransmission || std::abs(dot(transmit(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
-                return 0.0f;
+        //     return pdf * (sampleTransmission ? R : 1.0f);
+        // } else {
+        //     if (!sampleTransmission || std::abs(dot(transmit(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
+        //         return 0.0f;
 
-            return pdf * (sampleReflection ? 1-R : 1.0f);
-        }
+        //     return pdf * (sampleReflection ? 1-R : 1.0f);
+        // }
+        float sinThetaI = bRec.wi.y;
+        float sinThetaO = bRec.wo.y;
+        float cosThetaI = trigInverse(sinThetaI);
+        float cosThetaO = trigInverse(sinThetaO);
+        float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
+        float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
+        float thetaD = (thetaO - thetaI)*0.5f;
+        float cosThetaD = std::cos(thetaD);
+
+        float phi = std::atan2(bRec.wo.x, bRec.wo.z);
+        if (phi < 0.0f)
+            phi += 2.0 * M_PI_FLT;
+
+        float thetaIR   = thetaI - 2.0f*_scaleAngleRad;
+        float thetaITT  = thetaI +      _scaleAngleRad;
+        float thetaITRT = thetaI + 4.0f*_scaleAngleRad;
+
+        float weightR   = _nR  ->weight(cosThetaI);
+        float weightTT  = _nTT ->weight(cosThetaI);
+        float weightTRT = _nTRT->weight(cosThetaI);
+        float weightSum = weightR + weightTT + weightTRT;
+
+        float pdfR   = weightR  *M(_vR,   std::sin(thetaIR),   sinThetaO, std::cos(thetaIR),   cosThetaO);
+        float pdfTT  = weightTT *M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
+        float pdfTRT = weightTRT*M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
+
+        return (1.0f/weightSum)*
+            (pdfR  *  _nR->pdf(phi, cosThetaD)
+            + pdfTT * _nTT->pdf(phi, cosThetaD)
+            + pdfTRT*_nTRT->pdf(phi, cosThetaD));
+    }
+
+    float sampleM(float v, float sinThetaI, float cosThetaI, float xi1, float xi2) const
+    {
+        // Version from the paper (very unstable)
+        //float cosTheta = v*std::log(std::exp(1.0f/v) - 2.0f*xi1*std::sinh(1.0f/v));
+        // More stable version from "Numerically stable sampling of the von Mises Fisher distribution on S2 (and other tricks)"
+        float cosTheta = 1.0f + v*std::log(xi1 + (1.0f - xi1)*std::exp(-2.0f/v));
+        float sinTheta = trigInverse(cosTheta);
+        float cosPhi = std::cos(2 * M_PI_FLT *xi2);
+
+        return -cosTheta*sinThetaI + sinTheta*cosPhi*cosThetaI;
     }
 
     Spectrum sample(BSDFSamplingRecord &bRec, Float &pdf, const Point2 &sample) const {
-        bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
-                && (bRec.component == -1 || bRec.component == 0);
-        bool sampleTransmission = (bRec.typeMask & ENull)
-                && (bRec.component == -1 || bRec.component == 1);
+        // bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
+        //         && (bRec.component == -1 || bRec.component == 0);
+        // bool sampleTransmission = (bRec.typeMask & ENull)
+        //         && (bRec.component == -1 || bRec.component == 1);
 
-        Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
+        // Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
 
-        PhaseFunctionSamplingRecord pRec(MediumSamplingRecord(), bRec.wi, bRec.wo);
-        m_phase->sample(pRec, pdf, bRec.sampler);
+        // PhaseFunctionSamplingRecord pRec(MediumSamplingRecord(), bRec.wi, bRec.wo);
+        // m_phase->sample(pRec, pdf, bRec.sampler);
 
-        // Account for internal reflections: R' = R + TRT + TR^3T + ..
-        if (R < 1)
-            R += T*T * R / (1-R*R);
+        // // Account for internal reflections: R' = R + TRT + TR^3T + ..
+        // if (R < 1)
+        //     R += T*T * R / (1-R*R);
 
-        if (sampleTransmission && sampleReflection) {
-            if (sample.x <= R) {
-                bRec.sampledComponent = 0;
-                bRec.sampledType = EDeltaReflection;
-                bRec.wo = reflect(bRec.wi);
-                bRec.eta = 1.0f;
-                pdf *= R;
+        // if (sampleTransmission && sampleReflection) {
+        //     if (sample.x <= R) {
+        //         bRec.sampledComponent = 0;
+        //         bRec.sampledType = EDeltaReflection;
+        //         bRec.wo = reflect(bRec.wi);
+        //         bRec.eta = 1.0f;
+        //         pdf *= R;
 
-                return m_specularReflectance->eval(bRec.its);
-            } else {
-                bRec.sampledComponent = 1;
-                bRec.sampledType = ENull;
-                bRec.wo = transmit(bRec.wi);
-                bRec.eta = 1.0f;
-                pdf *= 1-R;
+        //         return m_specularReflectance->eval(bRec.its);
+        //     } else {
+        //         bRec.sampledComponent = 1;
+        //         bRec.sampledType = ENull;
+        //         bRec.wo = transmit(bRec.wi);
+        //         bRec.eta = 1.0f;
+        //         pdf *= 1-R;
 
-                return m_specularTransmittance->eval(bRec.its);
-            }
-        } else if (sampleReflection) {
-            bRec.sampledComponent = 0;
-            bRec.sampledType = EDeltaReflection;
-            bRec.wo = reflect(bRec.wi);
-            bRec.eta = 1.0f;
-            pdf = 1.0f;
+        //         return m_specularTransmittance->eval(bRec.its);
+        //     }
+        // } else if (sampleReflection) {
+        //     bRec.sampledComponent = 0;
+        //     bRec.sampledType = EDeltaReflection;
+        //     bRec.wo = reflect(bRec.wi);
+        //     bRec.eta = 1.0f;
+        //     pdf = 1.0f;
 
-            return m_specularReflectance->eval(bRec.its) * R;
-        } else if (sampleTransmission) {
-            bRec.sampledComponent = 1;
-            bRec.sampledType = ENull;
-            bRec.wo = transmit(bRec.wi);
-            bRec.eta = 1.0f;
-            pdf = 1.0f;
+        //     return m_specularReflectance->eval(bRec.its) * R;
+        // } else if (sampleTransmission) {
+        //     bRec.sampledComponent = 1;
+        //     bRec.sampledType = ENull;
+        //     bRec.wo = transmit(bRec.wi);
+        //     bRec.eta = 1.0f;
+        //     pdf = 1.0f;
 
-            return m_specularTransmittance->eval(bRec.its) * (1-R);
+        //     return m_specularTransmittance->eval(bRec.its) * (1-R);
+        // }
+        // return Spectrum(0.0f);
+
+        Point2 xiN = sample; // TODO should use random samples
+        Point2 xiM = sample;
+
+        float sinThetaI = bRec.wi.y;
+        float cosThetaI = trigInverse(sinThetaI);
+        float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
+
+        float thetaIR   = thetaI - 2.0f*_scaleAngleRad;
+        float thetaITT  = thetaI +      _scaleAngleRad;
+        float thetaITRT = thetaI + 4.0f*_scaleAngleRad;
+
+        // The following lines are just lobe selection
+        float weightR   = _nR  ->weight(cosThetaI);
+        float weightTT  = _nTT ->weight(cosThetaI);
+        float weightTRT = _nTRT->weight(cosThetaI);
+
+        const Azimuthal *lobe;
+        float v;
+        float theta;
+
+        float target = xiN.x*(weightR + weightTT + weightTRT);
+        if (target < weightR) {
+            v = _vR;
+            theta = thetaIR;
+            lobe = _nR.get();
+        } else if (target < weightR + weightTT) {
+            v = _vTT;
+            theta = thetaITT;
+            lobe = _nTT.get();
+        } else {
+            v = _vTRT;
+            theta = thetaITRT;
+            lobe = _nTRT.get();
         }
+
+        // Actual sampling of the direction starts here
+        float sinThetaO = sampleM(v, std::sin(theta), std::cos(theta), xiM.x, xiM.y);
+        float cosThetaO = trigInverse(sinThetaO);
+
+        float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
+        float thetaD = (thetaO - thetaI)*0.5f;
+        float cosThetaD = std::cos(thetaD);
+
+        float phi, phiPdf;
+        lobe->sample(cosThetaD, xiN.y, phi, phiPdf);
+
+        float sinPhi = std::sin(phi);
+        float cosPhi = std::cos(phi);
+
+        bRec.wo = Vector3f(sinPhi*cosThetaO, sinThetaO, cosPhi*cosThetaO);
+        pdf = Marschner::pdf(bRec, ESolidAngle); // TODO vary esolidangle
+        // bRec.weight = eval(event)/event.pdf;// TODO watch out for the weight
+        bRec.sampledType = EDeltaReflection;
 
         return Spectrum(0.0f);
     }
 
     Spectrum sample(BSDFSamplingRecord &bRec, const Point2 &sample) const {
-        bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
-                && (bRec.component == -1 || bRec.component == 0);
-        bool sampleTransmission = (bRec.typeMask & ENull)
-                && (bRec.component == -1 || bRec.component == 1);
-
-        Float R = fresnelDielectricExt(Frame::cosTheta(bRec.wi), m_eta), T = 1-R;
-
-        // Account for internal reflections: R' = R + TRT + TR^3T + ..
-        if (R < 1)
-            R += T*T * R / (1-R*R);
-
-        if (sampleTransmission && sampleReflection) {
-            if (sample.x <= R) {
-                bRec.sampledComponent = 0;
-                bRec.sampledType = EDeltaReflection;
-                bRec.wo = reflect(bRec.wi);
-                bRec.eta = 1.0f;
-
-                return m_specularReflectance->eval(bRec.its);
-            } else {
-                bRec.sampledComponent = 1;
-                bRec.sampledType = ENull;
-                bRec.wo = transmit(bRec.wi);
-                bRec.eta = 1.0f;
-
-                return m_specularTransmittance->eval(bRec.its);
-            }
-        } else if (sampleReflection) {
-            bRec.sampledComponent = 0;
-            bRec.sampledType = EDeltaReflection;
-            bRec.wo = reflect(bRec.wi);
-            bRec.eta = 1.0f;
-
-            return m_specularReflectance->eval(bRec.its) * R;
-        } else if (sampleTransmission) {
-            bRec.sampledComponent = 1;
-            bRec.sampledType = ENull;
-            bRec.wo = transmit(bRec.wi);
-            bRec.eta = 1.0f;
-
-            return m_specularTransmittance->eval(bRec.its) * (1-R);
-        }
-
-        return Spectrum(0.0f);
-    }
-
-    double legendre(double x, int n)
-    {
-        if (n == 0)
-            return 1.0;
-        if (n == 1)
-            return x;
-
-        double P0 = 1.0, P1 = x;
-        for (int i = 2; i <= n; ++i) {
-            double Pi = ((2.0*i - 1.0)*x*P1 - (i - 1.0)*P0)/i;
-            P0 = P1;
-            P1 = Pi;
-        }
-        return P1;
-    }
-
-    double legendreDeriv(double x, int n)
-    {
-        return n/(x*x - 1.0)*(x*legendre(x, n) - legendre(x, n - 1));
-    }
-
-    double kthRoot(int k, int N)
-    {
-        // Initial guess due to Francesco Tricomi
-        // See http://math.stackexchange.com/questions/12160/roots-of-legendre-polynomial
-        double x = std::cos(M_PI_FLT*(4.0*k - 1.0)/(4.0*N + 2.0))*
-                (1.0 - 1.0/(8.0*N*N) + 1.0/(8.0*N*N*N));
-
-        // Newton-Raphson
-        for (int i = 0; i < 100; ++i) {
-            double f = legendre(x, N);
-            x -= f/legendreDeriv(x, N);
-            if (std::abs(f) < 1e-6)
-                break;
-        }
-
-        return x;
+        float pdf;
+        return Marschner::sample(bRec, pdf, sample);
     }
 
     void precomputeAzimuthalDistributions() {
@@ -473,22 +508,16 @@ public:
         std::unique_ptr<Vector3f[]> valuesTRT(new Vector3f[Resolution*Resolution]);
 
         // Ideally we could simply make this a constexpr, but MSVC does not support that yet (boo!)
-        #define N 140
+        #define NumPoints 140
 
-        // GaussLegendre<NumPoints> integrator;
-        std::array<float, N> _points;
-        std::array<float, N> _weights;
-        for (int i = 0; i < N; ++i) {
-            _points[i] = float(kthRoot(i + 1, N));
-            _weights[i] = float(2.0/((1.0 - _points[i] * _points[i])*legendreDeriv(_points[i], N) * legendreDeriv(_points[i], N)));
-        }
-        // const auto points = integrator.points();
-        // const auto weights = integrator.weights();
+        GaussLegendre<NumPoints> integrator;
+        const auto points = integrator.points();
+        const auto weights = integrator.weights();
 
         // Cache the gammaI across all integration points
-        std::array<float, N> gammaIs;
-        for (int i = 0; i < N; ++i)
-            gammaIs[i] = std::asin(_points[i]);
+        std::array<float, NumPoints> gammaIs;
+        for (int i = 0; i < NumPoints; ++i)
+            gammaIs[i] = std::asin(points[i]);
 
         // Precompute the Gaussian detector and sample it into three 1D tables.
         // This is the only part of the precomputation that is actually approximate.
@@ -526,10 +555,10 @@ public:
             Vector3f sigmaAPrime = _sigmaA/cosThetaT;
 
             // Precompute gammaT, f_t and internal absorption across all integration points
-            std::array<float, N> fresnelTerms, gammaTs;
-            std::array<Vector3f, N> absorptions;
-            for (int i = 0; i < N; ++i) {
-                gammaTs[i] = std::asin(math::clamp(_points[i]/iorPrime, -1.0f, 1.0f));
+            std::array<float, NumPoints> fresnelTerms, gammaTs;
+            std::array<Vector3f, NumPoints> absorptions;
+            for (int i = 0; i < NumPoints; ++i) {
+                gammaTs[i] = std::asin(math::clamp(points[i]/iorPrime, -1.0f, 1.0f));
                 fresnelTerms[i] = fresnelDielectricExt(1.0f/m_eta, cosHalfAngle*std::cos(gammaIs[i]));
                 absorptions[i] = exp(-sigmaAPrime*2.0f*std::cos(gammaTs[i]));
             }
@@ -545,7 +574,7 @@ public:
                 // Since we were able to precompute most of the factors that
                 // are constant w.r.t phi for a given h,
                 // we don't have to do much work here.
-                for (int i = 0; i < N; ++i) {
+                for (int i = 0; i < integrator.numSamples(); ++i) {
                     float fR = fresnelTerms[i];
                     Vector3f T = absorptions[i];
 
@@ -553,9 +582,9 @@ public:
                     Vector3f ATT = (1.0f - fR)*(1.0f - fR)*T;
                     Vector3f ATRT = ATT*fR*T;
 
-                    integralR   += _weights[i]*approxD(0, phi - Phi(gammaIs[i], gammaTs[i], 0))*AR;
-                    integralTT  += _weights[i]*approxD(1, phi - Phi(gammaIs[i], gammaTs[i], 1))*ATT;
-                    integralTRT += _weights[i]*approxD(2, phi - Phi(gammaIs[i], gammaTs[i], 2))*ATRT;
+                    integralR   += weights[i]*approxD(0, phi - Phi(gammaIs[i], gammaTs[i], 0))*AR;
+                    integralTT  += weights[i]*approxD(1, phi - Phi(gammaIs[i], gammaTs[i], 1))*ATT;
+                    integralTRT += weights[i]*approxD(2, phi - Phi(gammaIs[i], gammaTs[i], 2))*ATRT;
                 }
 
                 valuesR  [phiI + y*Resolution] = Vector3f(0.5f*integralR);
@@ -608,6 +637,7 @@ private:
     float _scaleAngleRad;
     Vector3f _sigmaA;
     std::unique_ptr<Azimuthal> _nR, _nTT, _nTRT;
+    float _vR, _vTT, _vTRT;
 };
 
 /* Fake glass shader -- it is really hopeless to visualize
