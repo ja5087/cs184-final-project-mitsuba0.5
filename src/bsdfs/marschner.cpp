@@ -23,13 +23,17 @@
 #include <mitsuba/render/medium.h>
 #include <mitsuba/core/plugin.h>
 #include <mitsuba/hw/basicshader.h>
+#include <iostream>
+#include <array>
 #include "../medium/materials.h"
 #include "ior.h"
 #include "math.h"
 #include "azimuthal.cpp"
-#include "gausssexylingerie.cpp"
+#include "gausssexylingerie.hpp"
 
 MTS_NAMESPACE_BEGIN
+
+using namespace mitsuba;
 
 class Marschner : public BSDF {
 public:
@@ -221,32 +225,32 @@ public:
     }
 
     Spectrum eval(const BSDFSamplingRecord &bRec, EMeasure measure) const {
-        bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
-                && (bRec.component == -1 || bRec.component == 0) && measure == EDiscrete;
-        bool sampleTransmission = (bRec.typeMask & ENull)
-                && (bRec.component == -1 || bRec.component == 1) && measure == EDiscrete;
+        // bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
+        //         && (bRec.component == -1 || bRec.component == 0) && measure == EDiscrete;
+        // bool sampleTransmission = (bRec.typeMask & ENull)
+        //         && (bRec.component == -1 || bRec.component == 1) && measure == EDiscrete;
 
-        Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
+        // Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
         
-        MediumSamplingRecord dummy;
-        PhaseFunctionSamplingRecord pRec(dummy,bRec.wi,bRec.wo);
-        Float phaseVal = m_phase->eval(pRec);
+        // MediumSamplingRecord dummy;
+        // PhaseFunctionSamplingRecord pRec(dummy,bRec.wi,bRec.wo);
+        // Float phaseVal = m_phase->eval(pRec);
 
-        // Account for internal reflections: R' = R + TRT + TR^3T + ..
-        if (R < 1)
-            R += T*T * R / (1-R*R);
+        // // Account for internal reflections: R' = R + TRT + TR^3T + ..
+        // if (R < 1)
+        //     R += T*T * R / (1-R*R);
 
-        if (Frame::cosTheta(bRec.wi) * Frame::cosTheta(bRec.wo) >= 0) {
-            if (!sampleReflection || std::abs(dot(reflect(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
-                return Spectrum(0.0f);
+        // if (Frame::cosTheta(bRec.wi) * Frame::cosTheta(bRec.wo) >= 0) {
+        //     if (!sampleReflection || std::abs(dot(reflect(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
+        //         return Spectrum(0.0f);
 
-            return m_specularReflectance->eval(bRec.its) * R * phaseVal;
-        } else {
-            if (!sampleTransmission || std::abs(dot(transmit(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
-                return Spectrum(0.0f);
+        //     return m_specularReflectance->eval(bRec.its) * R * phaseVal;
+        // } else {
+        //     if (!sampleTransmission || std::abs(dot(transmit(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
+        //         return Spectrum(0.0f);
 
-            return m_specularTransmittance->eval(bRec.its) * (1 - R) * phaseVal;
-        }
+        //     return m_specularTransmittance->eval(bRec.its) * (1 - R) * phaseVal;
+        // }
 
         // if (!event.requestedLobe.test(BsdfLobes::GlossyLobe))
         //     return Vec3f(0.0f);
@@ -286,9 +290,11 @@ public:
         float MTT  = M(_betaTT, thetaH, _scaleAngleRad * -0.5f);
         float MTRT = M(_betaTRT, thetaH, _scaleAngleRad * -1.5f);
 
-        return   MR*  _nR->eval(phi, cosThetaD)
-                +  MTT* _nTT->eval(phi, cosThetaD)
-                + MTRT*_nTRT->eval(phi, cosThetaD);
+        // return   MR*  _nR->eval(phi, cosThetaD)
+        //         +  MTT* _nTT->eval(phi, cosThetaD)
+        //         + MTRT*_nTRT->eval(phi, cosThetaD);
+        cout << "---------------ITS WORKING!!!!!!!-------------" << endl;
+        return Spectrum(MR * 0.3f + MTT * 0.4f + MTRT * 0.5f);
     }
 
     Float pdf(const BSDFSamplingRecord &bRec, EMeasure measure) const {
@@ -421,6 +427,45 @@ public:
         return Spectrum(0.0f);
     }
 
+    double legendre(double x, int n)
+    {
+        if (n == 0)
+            return 1.0;
+        if (n == 1)
+            return x;
+
+        double P0 = 1.0, P1 = x;
+        for (int i = 2; i <= n; ++i) {
+            double Pi = ((2.0*i - 1.0)*x*P1 - (i - 1.0)*P0)/i;
+            P0 = P1;
+            P1 = Pi;
+        }
+        return P1;
+    }
+
+    double legendreDeriv(double x, int n)
+    {
+        return n/(x*x - 1.0)*(x*legendre(x, n) - legendre(x, n - 1));
+    }
+
+    double kthRoot(int k, int N)
+    {
+        // Initial guess due to Francesco Tricomi
+        // See http://math.stackexchange.com/questions/12160/roots-of-legendre-polynomial
+        double x = std::cos(M_PI_FLT*(4.0*k - 1.0)/(4.0*N + 2.0))*
+                (1.0 - 1.0/(8.0*N*N) + 1.0/(8.0*N*N*N));
+
+        // Newton-Raphson
+        for (int i = 0; i < 100; ++i) {
+            double f = legendre(x, N);
+            x -= f/legendreDeriv(x, N);
+            if (std::abs(f) < 1e-6)
+                break;
+        }
+
+        return x;
+    }
+
     void precomputeAzimuthalDistributions() {
         const int Resolution = Azimuthal::AzimuthalResolution;
         std::unique_ptr<Vector3f[]> valuesR  (new Vector3f[Resolution*Resolution]);
@@ -428,16 +473,22 @@ public:
         std::unique_ptr<Vector3f[]> valuesTRT(new Vector3f[Resolution*Resolution]);
 
         // Ideally we could simply make this a constexpr, but MSVC does not support that yet (boo!)
-        #define NumPoints 140
+        #define N 140
 
-        GaussLegendre<NumPoints> integrator;
-        const auto points = integrator.points();
-        const auto weights = integrator.weights();
+        // GaussLegendre<NumPoints> integrator;
+        std::array<float, N> _points;
+        std::array<float, N> _weights;
+        for (int i = 0; i < N; ++i) {
+            _points[i] = float(kthRoot(i + 1, N));
+            _weights[i] = float(2.0/((1.0 - _points[i] * _points[i])*legendreDeriv(_points[i], N) * legendreDeriv(_points[i], N)));
+        }
+        // const auto points = integrator.points();
+        // const auto weights = integrator.weights();
 
         // Cache the gammaI across all integration points
-        std::array<float, NumPoints> gammaIs;
-        for (int i = 0; i < NumPoints; ++i)
-            gammaIs[i] = std::asin(points[i]);
+        std::array<float, N> gammaIs;
+        for (int i = 0; i < N; ++i)
+            gammaIs[i] = std::asin(_points[i]);
 
         // Precompute the Gaussian detector and sample it into three 1D tables.
         // This is the only part of the precomputation that is actually approximate.
@@ -475,10 +526,10 @@ public:
             Vector3f sigmaAPrime = _sigmaA/cosThetaT;
 
             // Precompute gammaT, f_t and internal absorption across all integration points
-            std::array<float, NumPoints> fresnelTerms, gammaTs;
-            std::array<Vector3f, NumPoints> absorptions;
-            for (int i = 0; i < NumPoints; ++i) {
-                gammaTs[i] = std::asin(math::clamp(points[i]/iorPrime, -1.0f, 1.0f));
+            std::array<float, N> fresnelTerms, gammaTs;
+            std::array<Vector3f, N> absorptions;
+            for (int i = 0; i < N; ++i) {
+                gammaTs[i] = std::asin(math::clamp(_points[i]/iorPrime, -1.0f, 1.0f));
                 fresnelTerms[i] = fresnelDielectricExt(1.0f/m_eta, cosHalfAngle*std::cos(gammaIs[i]));
                 absorptions[i] = exp(-sigmaAPrime*2.0f*std::cos(gammaTs[i]));
             }
@@ -494,7 +545,7 @@ public:
                 // Since we were able to precompute most of the factors that
                 // are constant w.r.t phi for a given h,
                 // we don't have to do much work here.
-                for (int i = 0; i < integrator.numSamples(); ++i) {
+                for (int i = 0; i < N; ++i) {
                     float fR = fresnelTerms[i];
                     Vector3f T = absorptions[i];
 
@@ -502,9 +553,9 @@ public:
                     Vector3f ATT = (1.0f - fR)*(1.0f - fR)*T;
                     Vector3f ATRT = ATT*fR*T;
 
-                    integralR   += weights[i]*approxD(0, phi - Phi(gammaIs[i], gammaTs[i], 0))*AR;
-                    integralTT  += weights[i]*approxD(1, phi - Phi(gammaIs[i], gammaTs[i], 1))*ATT;
-                    integralTRT += weights[i]*approxD(2, phi - Phi(gammaIs[i], gammaTs[i], 2))*ATRT;
+                    integralR   += _weights[i]*approxD(0, phi - Phi(gammaIs[i], gammaTs[i], 0))*AR;
+                    integralTT  += _weights[i]*approxD(1, phi - Phi(gammaIs[i], gammaTs[i], 1))*ATT;
+                    integralTRT += _weights[i]*approxD(2, phi - Phi(gammaIs[i], gammaTs[i], 2))*ATRT;
                 }
 
                 valuesR  [phiI + y*Resolution] = Vector3f(0.5f*integralR);

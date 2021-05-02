@@ -1,8 +1,11 @@
+#ifndef GAUSSLEGENDRE_HPP_
+#define GAUSSLEGENDRE_HPP_
+
 #include "math.h"
 #include <iostream>
 #include <array>
 
-MTS_NAMESPACE_BEGIN
+namespace mitsuba {
 
 template<int N>
 class GaussLegendre
@@ -23,8 +26,7 @@ class GaussLegendre
         if (n == 1)
             return x;
 
-        double P0 = 1.0;
-        double P1 = x;
+        double P0 = 1.0, P1 = x;
         for (int i = 2; i <= n; ++i) {
             double Pi = ((2.0*i - 1.0)*x*P1 - (i - 1.0)*P0)/i;
             P0 = P1;
@@ -90,4 +92,6 @@ public:
     }
 };
 
-MTS_NAMESPACE_END
+}
+
+#endif /* GAUSSLEGENDRE_HPP_ */
