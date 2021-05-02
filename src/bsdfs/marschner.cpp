@@ -565,7 +565,7 @@ public:
         // bRec.weight = eval(event)/event.pdf;// TODO watch out for the weight
         bRec.sampledType = EDeltaReflection;
 
-        return Spectrum(0.0f);
+        return eval(bRec, ESolidAngle) / pdf;
     }
 
     Spectrum sample(BSDFSamplingRecord &bRec, const Point2 &sample) const {
