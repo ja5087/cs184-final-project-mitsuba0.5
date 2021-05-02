@@ -68,7 +68,7 @@ if hasQt:
                 qtSources = [x for x in qtSources if (not isinstance(x, str) or 'cocoa' not in x)]
         print(qtSources)
         if sys.platform == 'linux':
-                mtsgui = qtEnv.Program('mtsgui', qtSources, parse_flags='-L/usr/lib/x86_64-linux-gnu -lQt5Concurrent -lQt5Core -lQt5DBus -lQt5EglFSDeviceIntegration -lQt5EglFsKmsSupport -lQt5Gui -lQt5Network -lQt5OpenGLExtensions -lQt5OpenGL -lQt5PrintSupport -lQt5Sql -lQt5Test -lQt5Widgets -lQt5XcbQpa -lQt5XmlPatterns -lQt5Xml -lQtCLucene -lQtCore -lQtDBus -lQtDeclarative -lQtDesignerComponents -lQtDesigner -lQtGui -lQtHelp -lQtNetwork -lQtOpenGL -lQtScriptTools -lQtSql -lQtSvg -lQtTest -lQtUiTools -lQtXmlPatterns -lQtXml')
+                mtsgui = qtEnv.Program('mtsgui', qtSources, parse_flags='-L/usr/lib/x86_64-linux-gnu -lQt5Concurrent -lQt5Core -lQt5DBus -lQt5EglFSDeviceIntegration -lQt5EglFsKmsSupport -lQt5Gui -lQt5Network -lQt5OpenGLExtensions -lQt5OpenGL -lQt5PrintSupport -lQt5Sql -lQt5Test -lQt5Widgets -lQt5XcbQpa -lQt5XmlPatterns -lQt5Xml')
         else:
                 mtsgui = qtEnv.Program('mtsgui', qtSources) 
             
