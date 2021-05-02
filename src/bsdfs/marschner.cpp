@@ -109,7 +109,7 @@ class Marschner : public BSDF {
 public:
     Marschner(const Properties &props) : BSDF(props) {
         /* Specifies the internal index of refraction at the interface */
-        Float intIOR = lookupIOR(props, "intIOR", "bk7");
+        Float intIOR = lookupIOR(props, "intIOR", "amber");
 
         /* Specifies the external index of refraction at the interface */
         Float extIOR = lookupIOR(props, "extIOR", "air");
@@ -377,8 +377,8 @@ public:
         float MTRT = M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
 
         Vector3f temp = MR*  _nR->eval(phi, cosThetaD)
-                +  MTT* _nTT->eval(phi, cosThetaD)
-                + MTRT*_nTRT->eval(phi, cosThetaD);
+            + MTT* _nTT->eval(phi, cosThetaD)
+            + temp = MTRT*_nTRT->eval(phi, cosThetaD);
 
         float value[3] = {temp.x, temp.y, temp.z};
         return Spectrum(value);
