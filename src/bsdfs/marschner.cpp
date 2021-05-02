@@ -28,10 +28,82 @@
 #include "math.h"
 #include <iostream>
 #include <array>
-#include "azimuthal.cpp"
 #include "gausssexylingerie.hpp"
+#include "InterpolatedDistribution1D.hpp"
 
 MTS_NAMESPACE_BEGIN
+
+class Azimuthal {
+public:
+    Azimuthal(std::unique_ptr<Vector3f[]> table) : _table(std::move(table))
+    {
+        const int Size = AzimuthalResolution;
+
+        std::vector<float> weights(Size*Size);
+        for (int i = 0; i < Size*Size; ++i)
+            weights[i] = _table[i].max();
+
+        // Dilate weights slightly to stay conservative
+        for (int y = 0; y < Size; ++y) {
+            for (int x = 0; x < Size - 1; ++x)
+                weights[x + y*Size] = std::max(weights[x + y*Size], weights[x + 1 + y*Size]);
+            for (int x = Size - 1; x > 0; --x)
+                weights[x + y*Size] = std::max(weights[x + y*Size], weights[x - 1 + y*Size]);
+        }
+        for (int x = 0; x < Size; ++x) {
+            for (int y = 0; y < Size - 1; ++y)
+                weights[x + y*Size] = std::max(weights[x + y*Size], weights[x + (y + 1)*Size]);
+            for (int y = Size - 1; y > 0; --y)
+                weights[x + y*Size] = std::max(weights[x + y*Size], weights[x + (y - 1)*Size]);
+        }
+
+        _sampler.reset(new InterpolatedDistribution1D(std::move(weights), Size, Size));
+    }
+
+    static const int AzimuthalResolution = 64;
+
+    void sample(float cosThetaD, float xi, float &phi, float &pdf) const
+    {
+        float v = (AzimuthalResolution - 1)*cosThetaD;
+
+        int x;
+        _sampler->warp(v, xi, x);
+
+        phi = 2.0f*M_PI*(x + xi)*(1.0f/AzimuthalResolution);
+        pdf = _sampler->pdf(v, x)*float(AzimuthalResolution*(1.0f / (2.0f * M_PI)));
+    }
+
+    Vector3f eval(float phi, float cosThetaD) const
+    {
+        float u = (AzimuthalResolution - 1)*phi*(1.0f / (2.0f * M_PI));
+        float v = (AzimuthalResolution - 1)*cosThetaD;
+        int x0 = math::clamp(int(u), 0, AzimuthalResolution - 2);
+        int y0 = math::clamp(int(v), 0, AzimuthalResolution - 2);
+        int x1 = x0 + 1;
+        int y1 = y0 + 1;
+        u = math::clamp(u - x0, 0.0f, 1.0f);
+        v = math::clamp(v - y0, 0.0f, 1.0f);
+
+        return (_table[x0 + y0*AzimuthalResolution]*(1.0f - u) + _table[x1 + y0*AzimuthalResolution]*u)*(1.0f - v) +
+               (_table[x0 + y1*AzimuthalResolution]*(1.0f - u) + _table[x1 + y1*AzimuthalResolution]*u)*v;
+    }
+
+    float pdf(float phi, float cosThetaD) const
+    {
+        float u = (AzimuthalResolution - 1)*phi*(1.0f / (2.0f * M_PI));
+        float v = (AzimuthalResolution - 1)*cosThetaD;
+        return _sampler->pdf(v, int(u))*float(AzimuthalResolution*(1.0f / (2.0f * M_PI)));
+    }
+
+    float weight(float cosThetaD) const
+    {
+        float v = (AzimuthalResolution - 1)*cosThetaD;
+        return _sampler->sum(v)*(2.0f * M_PI/AzimuthalResolution);
+    }
+private:
+    std::unique_ptr<Vector3f[]> _table;
+    std::unique_ptr<InterpolatedDistribution1D> _sampler;
+};
 
 class Marschner : public BSDF {
 public:

@@ -578,6 +578,11 @@ template <typename T> struct TVector3 {
         return x*x + y*y + z*z;
     }
 
+    /// Return the max component of this vector
+    T max() const {
+        return std::max(x,std::max(y,z));
+    }
+
     /// Return the 2-norm of this vector
     LengthType length() const {
         return (LengthType) std::sqrt((LengthType) lengthSquared());
