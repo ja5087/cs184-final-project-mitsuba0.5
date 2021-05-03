@@ -28,6 +28,7 @@ plugins += env.SharedLibrary('hk', ['hk.cpp'])
 plugins += env.SharedLibrary('null', ['null.cpp'])
 plugins += env.SharedLibrary('thindielectric', ['thindielectric.cpp'])
 plugins += env.SharedLibrary('marschner', ['marschner.cpp'])
+plugins += env.SharedLibrary('marschner_diffuse', ['marschner_diffuse.cpp'])
 plugins += env.SharedLibrary('mirror', ['mirror.cpp'])
 plugins += env.SharedLibrary('kajiyakay', ['kajiyakay.cpp'])
 

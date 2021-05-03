@@ -28,7 +28,7 @@
 		</film>
 	</sensor>
 	
-	<bsdf type="marschner" id="black_hair">
+	<bsdf type="marschner_diffuse" id="black_hair">
 			<float name="alpha" value="0.2"/>
 		<string name="distribution" value="ggx"/>
 		<float name="intIOR" value="1.55"/>
@@ -38,7 +38,7 @@
     		<float name="exponent" value="10.0"/>
   	</bsdf>
 
-	<bsdf type="marschner" id="red_hair">
+	<bsdf type="marschner_diffuse" id="red_hair">
 		<float name="alpha" value="0.2"/>
 		<string name="distribution" value="ggx"/>
 		<float name="intIOR" value="1.55"/>
@@ -48,7 +48,7 @@
     		<float name="exponent" value="10.0"/>
   	</bsdf>
   	
- 	<bsdf type="marschner" id="brown_hair">
+ 	<bsdf type="marschner_diffuse" id="brown_hair">
  		<float name="alpha" value="0.2"/>
 		<string name="distribution" value="ggx"/>
 		<float name="intIOR" value="1.55"/>
@@ -58,7 +58,7 @@
     		<float name="exponent" value="10.0"/>
   	</bsdf>
   	
- 	<bsdf type="marschner" id="blonde_hair">
+ 	<bsdf type="marschner_diffuse" id="blonde_hair">
  		<float name="alpha" value="0.2"/>
 		<string name="distribution" value="ggx"/>
 		<float name="intIOR" value="1.55"/>

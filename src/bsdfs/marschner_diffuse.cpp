@@ -275,6 +275,14 @@ public:
         return -wi;
     }
 
+    // Spectrum getDiffuseReflectance(const Intersection &its) const {
+    //     return m_diffuseReflectance->eval(its);
+    // }
+
+    // Spectrum getSpecularReflectance(const Intersection &its) const {
+    //     return m_specularReflectance->eval(its);
+    // }
+
     static float I0(float x) {
         float result = 1.0f;
         float xSq = x*x;
@@ -360,6 +368,7 @@ public:
     // static float M(float beta, float theta, float alpha) {
     //     return g(beta, theta - alpha);
     // }
+    
     static float M(float v, float sinThetaI, float sinThetaO, float cosThetaI, float cosThetaO) {
         float a = cosThetaI*cosThetaO/v;
         float b = sinThetaI*sinThetaO/v;
