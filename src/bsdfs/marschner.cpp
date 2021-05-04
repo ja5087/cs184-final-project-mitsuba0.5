@@ -307,47 +307,10 @@ public:
 
 
     Spectrum eval(const BSDFSamplingRecord &bRec, EMeasure measure) const {
-        // bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
-        //         && (bRec.component == -1 || bRec.component == 0) && measure == EDiscrete;
-        // bool sampleTransmission = (bRec.typeMask & ENull)
-        //         && (bRec.component == -1 || bRec.component == 1) && measure == EDiscrete;
-
-        // Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
-        
-        // MediumSamplingRecord dummy;
-        // PhaseFunctionSamplingRecord pRec(dummy,bRec.wi,bRec.wo);
-        // Float phaseVal = m_phase->eval(pRec);
-
-        // // Account for internal reflections: R' = R + TRT + TR^3T + ..
-        // if (R < 1)
-        //     R += T*T * R / (1-R*R);
-
-        // if (Frame::cosTheta(bRec.wi) * Frame::cosTheta(bRec.wo) >= 0) {
-        //     if (!sampleReflection || std::abs(dot(reflect(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
-        //         return Spectrum(0.0f);
-
-        //     return m_specularReflectance->eval(bRec.its) * R * phaseVal;
-        // } else {
-        //     if (!sampleTransmission || std::abs(dot(transmit(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
-        //         return Spectrum(0.0f);
-
-        //     return m_specularTransmittance->eval(bRec.its) * (1 - R) * phaseVal;
-        // }
-
-        // if (!event.requestedLobe.test(BsdfLobes::GlossyLobe))
-        //     return Vec3f(0.0f);
-
         float sinThetaI = bRec.wi.y, sinThetaO = bRec.wo.y;
         float cosThetaO = trigInverse(sinThetaO);
         float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
         float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
-
-        // float thetaI = std::atan2(bRec.wi.z, bRec.wi.x);
-        // float thetaO = std::atan2(bRec.wo.z, bRec.wi.x);
-
-        // float phiI = std::atan2(math::safe_sqrt(bRec.wi.x * bRec.wi.x + bRec.wi.z * bRec.wi.z), bRec.wi.y);
-        // float phiO = std::atan2(math::safe_sqrt(bRec.wo.x * bRec.wo.x + bRec.wo.z * bRec.wo.z), bRec.wo.y);
-
         float thetaD = (thetaO - thetaI)*0.5f, thetaH = (thetaO + thetaI)*0.5f;
         float cosThetaD = std::cos(thetaD);
 
@@ -362,15 +325,6 @@ public:
         float thetaIR   = thetaI - 2.0f*_scaleAngleRad;
         float thetaITT  = thetaI +      _scaleAngleRad;
         float thetaITRT = thetaI + 4.0f*_scaleAngleRad;
-
-        // Evaluate longitudinal scattering functions
-        // float MR   = M(_vR,   std::sin(thetaH),   sinThetaO, std::cos(thetaH),  cosThetaO);
-        // float MTT  = M(_vTT,  std::sin(thetaH),  sinThetaO, std::cos(thetaH),  cosThetaO);
-        // float MTRT = M(_vTRT, std::sin(thetaH), sinThetaO, std::cos(thetaH), cosThetaO);
-
-        // float MR   = M(_betaR, thetaH, _scaleAngleRad);
-        // float MTT  = M(_betaTT, thetaH, _scaleAngleRad * -0.5f);
-        // float MTRT = M(_betaTRT, thetaH, _scaleAngleRad * -1.5f);
 
         float MR   = M(_vR,   std::sin(thetaIR),   sinThetaO, std::cos(thetaIR),   cosThetaO);
         float MTT  = M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
