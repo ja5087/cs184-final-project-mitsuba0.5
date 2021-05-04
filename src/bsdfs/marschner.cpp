@@ -311,7 +311,7 @@ public:
         float cosThetaO = trigInverse(sinThetaO);
         float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
         float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
-        float thetaD = (thetaO - thetaI)*0.5f, thetaH = (thetaO + thetaI)*0.5f;
+        float thetaD = (thetaO - thetaI)*0.5f;
         float cosThetaD = std::cos(thetaD);
 
         float phi = std::atan2(bRec.wo.x, bRec.wo.z);
@@ -330,9 +330,11 @@ public:
         float MTT  = M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
         float MTRT = M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
 
+        MR = 0.0;
+        MTT = 0.0;
         Vector3f temp = MR*  _nR->eval(phi, cosThetaD)
             + MTT* _nTT->eval(phi, cosThetaD)
-            + temp = MTRT*_nTRT->eval(phi, cosThetaD);
+            + MTRT*_nTRT->eval(phi, cosThetaD);
 
         float value[3] = {temp.x, temp.y, temp.z};
         return Spectrum(value);
@@ -395,10 +397,13 @@ public:
         float pdfTT  = weightTT *M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
         float pdfTRT = weightTRT*M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
 
-        return (1.0f/weightSum)*
+        Float result = (1.0f/weightSum)*
             (pdfR  *  _nR->pdf(phi, cosThetaD)
             + pdfTT * _nTT->pdf(phi, cosThetaD)
             + pdfTRT*_nTRT->pdf(phi, cosThetaD));
+        // cout << 1.0f/weightSum << "  " <<1.0f/weightSum * pdfR << "  " << 1.0f/weightSum * pdfTT << "  " << 1.0f/weightSum * pdfTRT << "  " << result << "\n";
+        // cout << 1.0f/weightSum * _nR->pdf(phi, cosThetaD) << "  " << 1.0f/weightSum * _nTT->pdf(phi, cosThetaD) << "  " << 1.0f/weightSum * _nTRT->pdf(phi, cosThetaD) << "=-----\n";
+        return result;
     }
 
     float sampleM(float v, float sinThetaI, float cosThetaI, float xi1, float xi2) const
@@ -465,8 +470,8 @@ public:
         // }
         // return Spectrum(0.0f);
 
-        Point2 xiN = sample; // TODO should use random samples
-        Point2 xiM = sample;
+        Point2 xiN = bRec.sampler->next2D();
+        Point2 xiM = bRec.sampler->next2D();
 
         float sinThetaI = bRec.wi.y;
         float cosThetaI = trigInverse(sinThetaI);
@@ -487,14 +492,17 @@ public:
 
         float target = xiN.x*(weightR + weightTT + weightTRT);
         if (target < weightR) {
+            bRec.sampledComponent = 0;
             v = _vR;
             theta = thetaIR;
             lobe = _nR.get();
         } else if (target < weightR + weightTT) {
+            bRec.sampledComponent = 1;
             v = _vTT;
             theta = thetaITT;
             lobe = _nTT.get();
         } else {
+            bRec.sampledComponent = 2;
             v = _vTRT;
             theta = thetaITRT;
             lobe = _nTRT.get();
@@ -518,6 +526,10 @@ public:
         pdf = Marschner::pdf(bRec, ESolidAngle); // TODO vary esolidangle
         // bRec.weight = eval(event)/event.pdf;// TODO watch out for the weight
         bRec.sampledType = EDeltaReflection;
+        bRec.eta = 1.0f;
+        if (pdf <= 0 || pdf > 1) {
+            return Spectrum(0.0f);
+        }
 
         return eval(bRec, ESolidAngle) / pdf;
     }
