@@ -750,5 +750,5 @@ Shader *Marschner::createShader(Renderer *renderer) const {
 
 MTS_IMPLEMENT_CLASS(MarschnerShader, false, Shader)
 MTS_IMPLEMENT_CLASS_S(Marschner, false, BSDF)
-MTS_EXPORT_PLUGIN(Marschner, "Thin dielectric BSDF");
+MTS_EXPORT_PLUGIN(Marschner, "Marschner BSDF");
 MTS_NAMESPACE_END
