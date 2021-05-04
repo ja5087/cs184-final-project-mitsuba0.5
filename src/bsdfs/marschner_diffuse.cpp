@@ -128,7 +128,8 @@ public:
             props.getSpectrum("specularReflectance", Spectrum(1.0f)));
         m_specularTransmittance = new ConstantSpectrumTexture(
             props.getSpectrum("specularTransmittance", Spectrum(1.0f)));
-        
+        m_exponent = new ConstantFloatTexture(
+            props.getFloat("exponent", 30.0f));
         m_diffuseReflectance = new ConstantSpectrumTexture(
             props.getSpectrum("diffuseReflectance", Spectrum(0.5f)));
 
@@ -163,6 +164,7 @@ public:
         m_eta = stream->readFloat();
         m_specularReflectance = static_cast<Texture *>(manager->getInstance(stream));
         m_specularTransmittance = static_cast<Texture *>(manager->getInstance(stream));
+        m_exponent = static_cast<Texture *>(manager->getInstance(stream));
         m_phase = static_cast<PhaseFunction *>(manager->getInstance(stream));
 
         m_type = (MicrofacetDistribution::EType) stream->readUInt();
@@ -200,10 +202,15 @@ public:
             m_specularReflectance, "specularReflectance", 1.0f);
         m_specularTransmittance = ensureEnergyConservation(
             m_specularTransmittance, "specularTransmittance", 1.0f);
+        m_diffuseReflectance = ensureEnergyConservation(
+            m_specularTransmittance, "diffuseReflectiance", 1.0f);
 
         m_components.clear();
-        m_components.push_back(EDeltaReflection | EFrontSide | EBackSide
-            | (m_specularReflectance->isConstant() ? 0 : ESpatiallyVarying));
+        m_components.push_back(EDelta1DReflection | EFrontSide | EBackSide |
+            ((!m_specularReflectance->isConstant()
+              || !m_exponent->isConstant()) ? ESpatiallyVarying : 0));
+        // m_components.push_back(EDeltaReflection | EFrontSide | EBackSide
+        //     | (m_specularReflectance->isConstant() ? 0 : ESpatiallyVarying));
         m_components.push_back(ENull | EFrontSide | EBackSide
             | (m_specularTransmittance->isConstant() ? 0 : ESpatiallyVarying));
         m_components.push_back(EDiffuseReflection | EFrontSide
@@ -214,27 +221,27 @@ public:
               sAvg = m_specularReflectance->getAverage().getLuminance();
         m_specularSamplingWeight = sAvg / (dAvg + sAvg);
 
-        m_invEta2 = 1.0f / (m_eta*m_eta);
+        // m_invEta2 = 1.0f / (m_eta*m_eta);
 
-        if (!m_externalRoughTransmittance.get()) {
-            /* Load precomputed data used to compute the rough
-               transmittance through the dielectric interface */
-            m_externalRoughTransmittance = new RoughTransmittance(m_type);
+        // if (!m_externalRoughTransmittance.get()) {
+        //     /* Load precomputed data used to compute the rough
+        //        transmittance through the dielectric interface */
+        //     m_externalRoughTransmittance = new RoughTransmittance(m_type);
 
-            m_externalRoughTransmittance->checkEta(m_eta);
-            m_externalRoughTransmittance->checkAlpha(m_alpha->getMinimum().average());
-            m_externalRoughTransmittance->checkAlpha(m_alpha->getMaximum().average());
+        //     m_externalRoughTransmittance->checkEta(m_eta);
+        //     m_externalRoughTransmittance->checkAlpha(m_alpha->getMinimum().average());
+        //     m_externalRoughTransmittance->checkAlpha(m_alpha->getMaximum().average());
 
-            /* Reduce the rough transmittance data to a 2D slice */
-            m_internalRoughTransmittance = m_externalRoughTransmittance->clone();
-            m_externalRoughTransmittance->setEta(m_eta);
-            m_internalRoughTransmittance->setEta(1/m_eta);
+        //     /* Reduce the rough transmittance data to a 2D slice */
+        //     m_internalRoughTransmittance = m_externalRoughTransmittance->clone();
+        //     m_externalRoughTransmittance->setEta(m_eta);
+        //     m_internalRoughTransmittance->setEta(1/m_eta);
 
-            /* If possible, even reduce it to a 1D slice */
-            if (constAlpha)
-                m_externalRoughTransmittance->setAlpha(
-                    m_alpha->eval(Intersection()).average());
-        }
+        //     /* If possible, even reduce it to a 1D slice */
+        //     if (constAlpha)
+        //         m_externalRoughTransmittance->setAlpha(
+        //             m_alpha->eval(Intersection()).average());
+        // }
 
 
         m_usesRayDifferentials =
@@ -543,39 +550,69 @@ public:
         float pdfTT  = weightTT *M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
         float pdfTRT = weightTRT*M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
 
-        MicrofacetDistribution distr(
-            m_type,
-            m_alpha->eval(bRec.its).average(),
-            m_sampleVisible
-        );
+        Float specProb = (1.0f/weightSum)*
+            (pdfR  *  _nR->pdf(phi, cosThetaD)
+            + pdfTT * _nTT->pdf(phi, cosThetaD)
+            + pdfTRT*_nTRT->pdf(phi, cosThetaD));
 
-        /* Calculate the reflection half-vector */
-        const Vector H = normalize(bRec.wo+bRec.wi);
+        if (Frame::cosTheta(bRec.wi) <= 0 ||
+            Frame::cosTheta(bRec.wo) <= 0 || measure != ESolidAngle)
+            return 0.0f;
 
-        float probDiffuse, probSpecular;
-        if (hasDiffuse) {
-            /* Find the probability of sampling the specular component */
-            probSpecular = 1-m_externalRoughTransmittance->eval(Frame::cosTheta(bRec.wi), distr.getAlpha());
+        bool hasSpecular = (bRec.typeMask & EGlossyReflection)
+                && (bRec.component == -1 || bRec.component == 0);
+        bool hasDiffuse  = (bRec.typeMask & EDiffuseReflection)
+                && (bRec.component == -1 || bRec.component == 1);
 
-            /* Reallocate samples */
-            probSpecular = (probSpecular*m_specularSamplingWeight) /
-                (probSpecular*m_specularSamplingWeight +
-                (1-probSpecular) * (1-m_specularSamplingWeight));
-
-            probDiffuse = 1 - probSpecular;
-        } else {
-            probDiffuse = probSpecular = 1.0f;
-        }
-        
-        float result = (1.0f/weightSum)*
-        (pdfR  *  _nR->pdf(phi, cosThetaD)
-        + pdfTT * _nTT->pdf(phi, cosThetaD)
-        + pdfTRT*_nTRT->pdf(phi, cosThetaD)) * probSpecular;        
+        Float diffuseProb = 0.0f;
 
         if (hasDiffuse)
-            result += probDiffuse * warp::squareToCosineHemispherePdf(bRec.wo);
+            diffuseProb = warp::squareToCosineHemispherePdf(bRec.wo);
 
-        return result;
+        if (hasDiffuse && hasSpecular)
+            return m_specularSamplingWeight * specProb +
+                   (1-m_specularSamplingWeight) * diffuseProb;
+        else if (hasDiffuse)
+            return diffuseProb;
+        else if (hasSpecular)
+            return specProb;
+        else
+            return 0.0f;
+
+
+        // MicrofacetDistribution distr(
+        //     m_type,
+        //     m_alpha->eval(bRec.its).average(),
+        //     m_sampleVisible
+        // );
+
+        // /* Calculate the reflection half-vector */
+        // const Vector H = normalize(bRec.wo+bRec.wi);
+
+        // float probDiffuse, probSpecular;
+        // if (hasDiffuse) {
+        //     /* Find the probability of sampling the specular component */
+        //     probSpecular = 1-m_externalRoughTransmittance->eval(Frame::cosTheta(bRec.wi), distr.getAlpha());
+
+        //     /* Reallocate samples */
+        //     probSpecular = (probSpecular*m_specularSamplingWeight) /
+        //         (probSpecular*m_specularSamplingWeight +
+        //         (1-probSpecular) * (1-m_specularSamplingWeight));
+
+        //     probDiffuse = 1 - probSpecular;
+        // } else {
+        //     probDiffuse = probSpecular = 1.0f;
+        // }
+        
+        // float result = (1.0f/weightSum)*
+        // (pdfR  *  _nR->pdf(phi, cosThetaD)
+        // + pdfTT * _nTT->pdf(phi, cosThetaD)
+        // + pdfTRT*_nTRT->pdf(phi, cosThetaD)) * probSpecular;        
+
+        // if (hasDiffuse)
+        //     result += probDiffuse * warp::squareToCosineHemispherePdf(bRec.wo);
+
+        // return result;
     }
 
     float sampleM(float v, float sinThetaI, float cosThetaI, float xi1, float xi2) const
@@ -870,6 +907,7 @@ public:
 private:
     ref<Texture> m_specularTransmittance;
     ref<Texture> m_specularReflectance;
+    ref<const Texture> m_exponent;
     ref<PhaseFunction> m_phase;
     float m_eta;
     float _betaR;
