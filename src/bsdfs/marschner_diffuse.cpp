@@ -125,13 +125,13 @@ public:
         _sigmaA = Vector3f(0.22);        
 
         m_specularReflectance = new ConstantSpectrumTexture(
-            props.getSpectrum("specularReflectance", Spectrum(1.0f)));
+            props.getSpectrum("specularReflectance", Spectrum(0.1f)));
         m_specularTransmittance = new ConstantSpectrumTexture(
             props.getSpectrum("specularTransmittance", Spectrum(1.0f)));
         m_exponent = new ConstantFloatTexture(
             props.getFloat("exponent", 30.0f));
         m_diffuseReflectance = new ConstantSpectrumTexture(
-            props.getSpectrum("diffuseReflectance", Spectrum(0.5f)));
+            props.getSpectrum("diffuseReflectance", Spectrum(1.0f)));
 
         m_nonlinear = props.getBoolean("nonlinear", false);
 
@@ -282,13 +282,13 @@ public:
         return -wi;
     }
 
-    // Spectrum getDiffuseReflectance(const Intersection &its) const {
-    //     return m_diffuseReflectance->eval(its);
-    // }
+    Spectrum getDiffuseReflectance(const Intersection &its) const {
+        return m_diffuseReflectance->eval(its);
+    }
 
-    // Spectrum getSpecularReflectance(const Intersection &its) const {
-    //     return m_specularReflectance->eval(its);
-    // }
+    Spectrum getSpecularReflectance(const Intersection &its) const {
+        return m_specularReflectance->eval(its);
+    }
 
     static float I0(float x) {
         float result = 1.0f;
@@ -475,17 +475,18 @@ public:
             m_sampleVisible
         );  
         if (hasDiffuse) {
-            Spectrum diff = m_diffuseReflectance->eval(bRec.its);
-            float T12 = m_externalRoughTransmittance->eval(Frame::cosTheta(bRec.wi), distr.getAlpha());
-            float T21 = m_externalRoughTransmittance->eval(Frame::cosTheta(bRec.wo), distr.getAlpha());
-            float Fdr = 1-m_internalRoughTransmittance->evalDiffuse(distr.getAlpha());
+            // Spectrum diff = m_diffuseReflectance->eval(bRec.its);
+            // float T12 = m_externalRoughTransmittance->eval(Frame::cosTheta(bRec.wi), distr.getAlpha());
+            // float T21 = m_externalRoughTransmittance->eval(Frame::cosTheta(bRec.wo), distr.getAlpha());
+            // float Fdr = 1-m_internalRoughTransmittance->evalDiffuse(distr.getAlpha());
 
-            if (m_nonlinear)
-                diff /= Spectrum(1.0f) - diff * Fdr;
-            else
-                diff /= 1-Fdr;
+            // if (m_nonlinear)
+            //     diff /= Spectrum(1.0f) - diff * Fdr;
+            // else
+            //     diff /= 1-Fdr;
 
-            result += diff * (INV_PI * Frame::cosTheta(bRec.wo) * T12 * T21 * m_invEta2);
+            // result += diff * (INV_PI * Frame::cosTheta(bRec.wo) * T12 * T21 * m_invEta2);
+            result += m_diffuseReflectance->eval(bRec.its) * INV_PI;
         }
 
         return result;
