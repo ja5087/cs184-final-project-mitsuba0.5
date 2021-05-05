@@ -845,8 +845,17 @@ void HairShape::fillIntersectionRecord(const Ray &ray,
     const Vector local = its.geoFrame.toLocal(relHitPoint);
     its.p += its.geoFrame.n * (m_kdtree->getRadius() - std::sqrt(local.y*local.y+local.z*local.z));
 
-    its.shFrame.n = its.geoFrame.n;
-    coordinateSystem(its.shFrame.n, its.dpdu, its.dpdv);
+    its.shFrame = its.geoFrame;
+    its.dpdu = its.geoFrame.s;
+    its.dpdv = its.geoFrame.t;
+
+
+    // std::ostringstream oss;
+    // oss << "Hair Intersection" << endl;
+    // oss << "Geometric Frame: " << its.geoFrame.toString() << endl;
+    // oss << "Shading Frame: " << its.shFrame.toString() << endl;
+    // oss << "dpdu, dpdv: " << its.dpdu.toString() << " " << its.dpdv.toString() << endl;            
+    // cout << oss.str();
     its.hasUVPartials = false;
     its.instance = this;
     its.time = ray.time;
