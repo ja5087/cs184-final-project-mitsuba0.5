@@ -22,11 +22,11 @@
 
 MTS_NAMESPACE_BEGIN
 
-/*!\plugin{kajiyakay}{Kajiya Kay BSDF}
+/*!\plugin{phong}{Modified KajiyaKay BRDF}
  * \order{14}
  * \parameters{
  *     \parameter{exponent}{\Float\Or\Texture}{
- *         Specifies the Phong exponent \default{30}.
+ *         Specifies the KajiyaKay exponent \default{30}.
  *     }
  *     \parameter{specular\showbreak Reflectance}{\Spectrum\Or\Texture}{
  *         Specifies the weight of the specular reflectance component.\default{0.2}}
@@ -38,9 +38,8 @@ MTS_NAMESPACE_BEGIN
  *     \rendering{Exponent$\,=300$}{bsdf_phong_300}
  * }
 
- * TO BE WRITTEN!
- * This plugin implements the modified Phong reflectance model as described in
- * \cite{Phong1975Illumination} and \cite{Lafortune1994Using}. This heuristic
+ * This plugin implements the modified KajiyaKay reflectance model as described in
+ * \cite{KajiyaKay1975Illumination} and \cite{Lafortune1994Using}. This heuristic
  * model is mainly included for historical reasons---its use in new scenes is
  * discouraged, since significantly more realistic models have been developed
  * since 1975.
@@ -65,7 +64,7 @@ public:
         m_specularReflectance = new ConstantSpectrumTexture(
             props.getSpectrum("specularReflectance", Spectrum(0.2f)));
         m_exponent = new ConstantFloatTexture(
-            props.getFloat("exponent", 5.0f));
+            props.getFloat("exponent", 30.0f));
         m_specularSamplingWeight = 0.0f;
     }
 
@@ -132,30 +131,50 @@ public:
 
         Spectrum result(0.0f);
         if (hasSpecular) {
-            Float tl = bRec.wi.x;
-            Float te = bRec.wo.x;
+            Float alpha_phong    = dot(bRec.wo, reflect(bRec.wi));
+            Float tl = std::abs(bRec.wi.x);
+            Float te = std::abs(bRec.wo.x);
             Float sin_tl = std::sqrt(1-tl*tl);
             Float sin_te = std::sqrt(1-te*te);
             Float alpha = tl*te + sin_tl*sin_te;
             Float exponent = m_exponent->eval(bRec.its).average();
-            if (alpha > 0.0f) {
-                Spectrum res = (exponent + 2) * INV_TWOPI * m_specularReflectance->eval(bRec.its) * std::pow(alpha, exponent);
+            // if (alpha > 0.0f) {
+            //     Spectrum res = (exponent + 2) * INV_TWOPI * m_specularReflectance->eval(bRec.its) * std::pow(alpha, exponent);
+            //     std::ostringstream oss;
+            //     oss << "Specular Term" << endl;
+            //     oss << "wi: " << bRec.wi.toString() << endl;
+            //     oss << "wo: " << bRec.wo.toString() << endl;
+            //     oss << "sin_tl, sin_te: " << sin_tl << " " << sin_te << endl;
+            //     oss << "alpha: " << alpha << endl;
+            //     oss << "exponent: " << exponent << endl;
+            //     oss << "result: " << res.toString() << endl;
+            //     // cout << oss.str();
+                
+            //     result += res;
+            // }
+
+            // Do not add backscatter terms to avoid occluded terms being too bright
+            if (alpha > 0.0f && bRec.wi.x * bRec.wo.x < 0) {
+
+                // Add an empirical constant since the cone was making it too bright.
+                Spectrum res = 0.3f * m_specularReflectance->eval(bRec.its) *
+                    ((exponent + 2) * INV_FOURPI * std::pow(alpha, exponent));
                 std::ostringstream oss;
                 oss << "Specular Term" << endl;
                 oss << "wi: " << bRec.wi.toString() << endl;
                 oss << "wo: " << bRec.wo.toString() << endl;
                 oss << "sin_tl, sin_te: " << sin_tl << " " << sin_te << endl;
                 oss << "alpha: " << alpha << endl;
+                oss << "phong_alpha: " << alpha_phong << endl;
                 oss << "exponent: " << exponent << endl;
                 oss << "result: " << res.toString() << endl;
                 // cout << oss.str();
-                
                 result += res;
             }
         }
 
         if (hasDiffuse)
-            result += 0.2f * m_diffuseReflectance->eval(bRec.its);
+            result += m_diffuseReflectance->eval(bRec.its) * INV_PI;
 
         return result * Frame::cosTheta(bRec.wo);
     }
@@ -175,17 +194,9 @@ public:
         if (hasDiffuse)
             diffuseProb = warp::squareToCosineHemispherePdf(bRec.wo);
 
-        // // Don't sample specular that's too low to avoid numerical error
-        // if (hasSpecular && (bRec.wo.z > -1e-4 && bRec.wo.z < 1e-4)) return 0.0f;
-
         if (hasSpecular) {
-            // specProb = INV_TWOPI_FLT / bRec.wi.z;
-            Float tl = bRec.wi.x;
-            Float te = bRec.wo.x;
-            Float sin_tl = std::sqrt(1-tl*tl);
-            Float sin_te = std::sqrt(1-te*te);
-            Float alpha = tl*te + sin_tl*sin_te;
-            Float exponent = m_exponent->eval(bRec.its).average();
+            Float alpha    = dot(bRec.wo, reflect(bRec.wi)),
+                  exponent = m_exponent->eval(bRec.its).average();
             if (alpha > 0)
                 specProb = std::pow(alpha, exponent) *
                     (exponent + 1.0f) / (2.0f * M_PI);
@@ -326,7 +337,6 @@ private:
 /**
  * The GLSL implementation clamps the exponent to 30 so that a
  * VPL renderer will able to handle the material reasonably well.
- * This is based off the old Phong code since we're doing illegal things
  */
 class KajiyaKayShader : public Shader {
 public:
@@ -399,5 +409,5 @@ Shader *KajiyaKay::createShader(Renderer *renderer) const {
 
 MTS_IMPLEMENT_CLASS(KajiyaKayShader, false, Shader)
 MTS_IMPLEMENT_CLASS_S(KajiyaKay, false, BSDF)
-MTS_EXPORT_PLUGIN(KajiyaKay, "Kajiya Kay Hair BSDF");
+MTS_EXPORT_PLUGIN(KajiyaKay, "Modified KajiyaKay BRDF");
 MTS_NAMESPACE_END
