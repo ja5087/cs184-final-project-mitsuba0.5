@@ -132,7 +132,6 @@ public:
 
         Spectrum result(0.0f);
         if (hasSpecular) {
-            Vector l = reflect(bRec.wi);
             Float tl = bRec.wi.x;
             Float te = bRec.wo.x;
             Float sin_tl = std::sqrt(1-tl*tl);
@@ -140,20 +139,23 @@ public:
             Float alpha = tl*te + sin_tl*sin_te;
             Float exponent = m_exponent->eval(bRec.its).average();
             if (alpha > 0.0f) {
-                // std::ostringstream oss;
-                // oss << "Specular Term" << endl;
-                // oss << "wi: " << bRec.wi.toString() << endl;
-                // oss << "wo: " << bRec.wo.toString() << endl;
-                // oss << "l: " << l.toString() << endl;
-                // oss << "sin_tl, sin_te: " << sin_tl << " " << sin_te << endl;
-                // oss << "alpha: " << alpha << endl;
+                Spectrum res = (exponent + 2) * INV_TWOPI * m_specularReflectance->eval(bRec.its) * std::pow(alpha, exponent);
+                std::ostringstream oss;
+                oss << "Specular Term" << endl;
+                oss << "wi: " << bRec.wi.toString() << endl;
+                oss << "wo: " << bRec.wo.toString() << endl;
+                oss << "sin_tl, sin_te: " << sin_tl << " " << sin_te << endl;
+                oss << "alpha: " << alpha << endl;
+                oss << "exponent: " << exponent << endl;
+                oss << "result: " << res.toString() << endl;
                 // cout << oss.str();
-                result += 0.4f * m_specularReflectance->eval(bRec.its) * std::pow(alpha, exponent);
+                
+                result += res;
             }
         }
 
-        // if (hasDiffuse)
-        //     result += 0.2f * m_diffuseReflectance->eval(bRec.its);
+        if (hasDiffuse)
+            result += 0.2f * m_diffuseReflectance->eval(bRec.its);
 
         return result * Frame::cosTheta(bRec.wo);
     }
@@ -178,7 +180,15 @@ public:
 
         if (hasSpecular) {
             // specProb = INV_TWOPI_FLT / bRec.wi.z;
-            specProb = warp::squareToCosineHemispherePdf(bRec.wo); // Cosine Hemi Sampling
+            Float tl = bRec.wi.x;
+            Float te = bRec.wo.x;
+            Float sin_tl = std::sqrt(1-tl*tl);
+            Float sin_te = std::sqrt(1-te*te);
+            Float alpha = tl*te + sin_tl*sin_te;
+            Float exponent = m_exponent->eval(bRec.its).average();
+            if (alpha > 0)
+                specProb = std::pow(alpha, exponent) *
+                    (exponent + 1.0f) / (2.0f * M_PI);
         }
 
         if (hasDiffuse && hasSpecular)
@@ -216,26 +226,26 @@ public:
         }
 
         if (choseSpecular) {
-            // // Sample from a circle of radius z centered around (0,0,height)
-            // Float height =  std::sqrt(bRec.wi.x * bRec.wi.x + bRec.wi.y * bRec.wi.y);
-            // Float radius = bRec.wi.z;
-            // Float theta = (2.0f * M_PI) * sample.x;
+            Vector R = reflect(bRec.wi);
+            Float exponent = m_exponent->eval(bRec.its).average();
 
-            // Vector localDir = Vector(
-            //     radius * std::cos(theta),
-            //     radius * std::sin(theta),
-            //     height
-            // );
-            // localDir /= localDir.length();
+            /* Sample from a Phong lobe centered around (0, 0, 1) */
+            Float sinAlpha = std::sqrt(1-std::pow(sample.y, 2/(exponent + 1)));
+            Float cosAlpha = std::pow(sample.y, 1/(exponent + 1));
+            Float phi = (2.0f * M_PI) * sample.x;
+            Vector localDir = Vector(
+                sinAlpha * std::cos(phi),
+                sinAlpha * std::sin(phi),
+                cosAlpha
+            );
 
-            // // Rotate back into correct coordinate system
-            // Vector tangent = reflect(bRec.wi);
-            // tangent.z = 0; // Project onto floor
-            // bRec.wo = Frame(tangent).toWorld(localDir);
-            // Just do cosine hemisphere sampling lol
-            bRec.wo = warp::squareToCosineHemisphere(sample);
+            /* Rotate into the correct coordinate system */
+            bRec.wo = Frame(R).toWorld(localDir);
             bRec.sampledComponent = 1;
             bRec.sampledType = EGlossyReflection;
+
+            if (Frame::cosTheta(bRec.wo) <= 0)
+                return Spectrum(0.0f);
         } else {
             bRec.wo = warp::squareToCosineHemisphere(sample);
             bRec.sampledComponent = 0;
