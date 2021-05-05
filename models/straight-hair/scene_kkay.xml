@@ -30,7 +30,7 @@
 
 	<bsdf type="kajiyakay" id="hair">
 		<rgb name="diffuseReflectance" value="0.143016, 0.0156076, 1.80928e-005"/>
-		<float name="exponent" value="10.0"/>
+		<float name="exponent" value="10"/>
 	</bsdf>
 
 	<shape type="hair">
