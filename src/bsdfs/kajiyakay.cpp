@@ -133,17 +133,27 @@ public:
         Spectrum result(0.0f);
         if (hasSpecular) {
             Vector l = reflect(bRec.wi);
-            Float sin_nl = std::sqrt(1-l.z*l.z);
-            Float sin_ne = std::sqrt(1-bRec.wo.z*bRec.wo.z);
-            Float alpha = (l.z * bRec.wo.z - sin_nl*sin_ne);
+            Float tl = bRec.wi.x;
+            Float te = bRec.wo.x;
+            Float sin_tl = std::sqrt(1-tl*tl);
+            Float sin_te = std::sqrt(1-te*te);
+            Float alpha = tl*te + sin_tl*sin_te;
             Float exponent = m_exponent->eval(bRec.its).average();
             if (alpha > 0.0f) {
-                result += 10.0f * m_specularReflectance->eval(bRec.its) * std::pow(alpha, exponent);
+                // std::ostringstream oss;
+                // oss << "Specular Term" << endl;
+                // oss << "wi: " << bRec.wi.toString() << endl;
+                // oss << "wo: " << bRec.wo.toString() << endl;
+                // oss << "l: " << l.toString() << endl;
+                // oss << "sin_tl, sin_te: " << sin_tl << " " << sin_te << endl;
+                // oss << "alpha: " << alpha << endl;
+                // cout << oss.str();
+                result += 0.4f * m_specularReflectance->eval(bRec.its) * std::pow(alpha, exponent);
             }
         }
 
-        if (hasDiffuse)
-            result += 0.2f * m_diffuseReflectance->eval(bRec.its);
+        // if (hasDiffuse)
+        //     result += 0.2f * m_diffuseReflectance->eval(bRec.its);
 
         return result * Frame::cosTheta(bRec.wo);
     }
