@@ -157,7 +157,7 @@ public:
             if (alpha > 0.0f && bRec.wi.x * bRec.wo.x < 0) {
 
                 // Add an empirical constant since the cone was making it too bright.
-                Spectrum res = 0.3f * m_specularReflectance->eval(bRec.its) *
+                Spectrum res = 0.15f * m_specularReflectance->eval(bRec.its) *
                     ((exponent + 2) * INV_FOURPI * std::pow(alpha, exponent));
                 std::ostringstream oss;
                 oss << "Specular Term" << endl;
