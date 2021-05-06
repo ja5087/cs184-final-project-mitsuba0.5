@@ -309,7 +309,7 @@ public:
 
     Spectrum eval(const BSDFSamplingRecord &bRec, EMeasure measure) const {
 
-        if (bRec.wo.z < 0) return Spectrum(0.0f); // Just don't trace rays that go under hair lol
+        // if (bRec.wo.z < 0) return Spectrum(0.0f); // Just don't trace rays that go under hair lol
         float sinThetaI = bRec.wi.x, sinThetaO = bRec.wo.x;
         float cosThetaO = trigInverse(sinThetaO);
         float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
@@ -337,9 +337,9 @@ public:
         // "Importance Sampling for Physically-Based Hair Fiber Models"
         // rather than the earlier paper by Marschner et al. I believe
         // these are slightly more accurate.
-        float thetaIR   = thetaI - 2.0f*_scaleAngleRad;
+        float thetaIR   = thetaI + 2.0f*_scaleAngleRad;
         float thetaITT  = thetaI +      _scaleAngleRad;
-        float thetaITRT = thetaI + 4.0f*_scaleAngleRad;
+        float thetaITRT = thetaI - 4.0f*_scaleAngleRad;
 
         float MR   = M(_vR,   std::sin(thetaIR),   sinThetaO, std::cos(thetaIR),   cosThetaO);
         float MTT  = M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
@@ -353,7 +353,10 @@ public:
         //     + MTT* _nTT->eval(phi, cosThetaD)
         //     + MTRT*_nTRT->eval(phi, cosThetaD);
 
-        Vector3f temp = MR * _nR->eval(phi, cosThetaD) +
+        // Spectrum color = m_specularReflectance->eval(bRec.its);
+        // Vector3f color_v = Vector3(color[0], color[1], color[2]);
+
+        Vector3f temp = MR * _nR->eval(phi, cosThetaD)
             + MTT* _nTT->eval(phi, cosThetaD)
             + MTRT*_nTRT->eval(phi, cosThetaD);
 

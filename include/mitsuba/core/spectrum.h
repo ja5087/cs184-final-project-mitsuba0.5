@@ -703,6 +703,14 @@ public:
             s[i] = v;
     }
 
+    /// Hack to create a Spectrum from a vector
+    explicit inline Spectrum(Vector3 vec) {
+        for (int i=0; i<SPECTRUM_SAMPLES; i++) {
+            if (i < 3) s[i] = vec[i];
+            else s[i] = 0;
+        }
+    }
+
     /// Copy a spectral power distribution
     explicit inline Spectrum(Float value[SPECTRUM_SAMPLES]) {
         memcpy(s, value, sizeof(Float)*SPECTRUM_SAMPLES);

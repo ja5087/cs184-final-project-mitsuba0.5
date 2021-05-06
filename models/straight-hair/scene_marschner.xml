@@ -13,7 +13,7 @@
     </transform>
 
     <sampler type="sobol">
-      <integer name="sampleCount" value="64"/>
+      <integer name="sampleCount" value="128"/>
     </sampler>
 
     <film type="ldrfilm">
@@ -29,7 +29,7 @@
   </sensor>
 
   <bsdf type="marschner" id="hair">
-    <rgb name="specularReflectance" value="0.143016, 0.0156076, 1.80928e-005"/>
+    <rgb name="specularReflectance" value="0.994097781, 0.108487725, 0.125762239"/>
     <float name="exponent" value="10.0"/>
   </bsdf>
 

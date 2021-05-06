@@ -169,7 +169,7 @@ public:
                 oss << "exponent: " << exponent << endl;
                 oss << "result: " << res.toString() << endl;
                 // cout << oss.str();
-                result += res;
+                // result += res;
             }
         }
 
