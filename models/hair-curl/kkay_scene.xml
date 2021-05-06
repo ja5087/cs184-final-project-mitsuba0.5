@@ -28,24 +28,24 @@
 		</film>
 	</sensor>
 
-    <bsdf type="kajiyakay" id="black_hair">
-        <rgb name="specularReflectance" value="6.344e-006, 7.62186e-012, 6.53751e-030"/>
-        <rgb name="specularTransmittance" value="6.344e-006, 7.62186e-012, 6.53751e-030"/>
+	<bsdf type="kajiyakay" id="black_hair">
+		<float name="exponent" value="10"/>
+		<rgb name="diffuseReflectance" value="6.344e-006, 7.62186e-012, 6.53751e-030"/>
 	</bsdf>
 
-    <bsdf type="kajiyakay" id="red_hair">
-        <rgb name="specularReflectance" value="0.0112431, 6.77287e-005, 1.13705e-011"/>
-        <rgb name="specularTransmittance" value="0.0112431, 6.77287e-005, 1.13705e-011"/>
+	<bsdf type="kajiyakay" id="red_hair">
+		<float name="exponent" value="10"/>
+		<rgb name="diffuseReflectance" value="0.0112431, 6.77287e-005, 1.13705e-011"/>
 	</bsdf>
 
-    <bsdf type="kajiyakay" id="brown_hair">
-        <rgb name="specularReflectance" value="0.143016, 0.0156076, 1.80928e-005"/>
-        <rgb name="specularTransmittance" value="0.143016, 0.0156076, 1.80928e-005"/>
+	<bsdf type="kajiyakay" id="brown_hair">
+		<float name="exponent" value="10"/>
+		<rgb name="diffuseReflectance" value="0.143016, 0.0156076, 1.80928e-005"/>
 	</bsdf>
 
 	<bsdf type="kajiyakay" id="blonde_hair">
-		<rgb name="specularReflectance" value="0.592384, 0.32628, 0.0528657"/>
-        <rgb name="specularTransmittance" value="0.592384, 0.32628, 0.0528657"/>
+		<float name="exponent" value="10"/>
+		<rgb name="diffuseReflectance" value="0.592384, 0.32628, 0.0528657"/>
 	</bsdf>
 
 	<shape type="hair">

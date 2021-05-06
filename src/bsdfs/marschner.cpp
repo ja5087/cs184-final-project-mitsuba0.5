@@ -307,48 +307,11 @@ public:
 
 
     Spectrum eval(const BSDFSamplingRecord &bRec, EMeasure measure) const {
-        // bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
-        //         && (bRec.component == -1 || bRec.component == 0) && measure == EDiscrete;
-        // bool sampleTransmission = (bRec.typeMask & ENull)
-        //         && (bRec.component == -1 || bRec.component == 1) && measure == EDiscrete;
-
-        // Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
-        
-        // MediumSamplingRecord dummy;
-        // PhaseFunctionSamplingRecord pRec(dummy,bRec.wi,bRec.wo);
-        // Float phaseVal = m_phase->eval(pRec);
-
-        // // Account for internal reflections: R' = R + TRT + TR^3T + ..
-        // if (R < 1)
-        //     R += T*T * R / (1-R*R);
-
-        // if (Frame::cosTheta(bRec.wi) * Frame::cosTheta(bRec.wo) >= 0) {
-        //     if (!sampleReflection || std::abs(dot(reflect(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
-        //         return Spectrum(0.0f);
-
-        //     return m_specularReflectance->eval(bRec.its) * R * phaseVal;
-        // } else {
-        //     if (!sampleTransmission || std::abs(dot(transmit(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
-        //         return Spectrum(0.0f);
-
-        //     return m_specularTransmittance->eval(bRec.its) * (1 - R) * phaseVal;
-        // }
-
-        // if (!event.requestedLobe.test(BsdfLobes::GlossyLobe))
-        //     return Vec3f(0.0f);
-
         float sinThetaI = bRec.wi.y, sinThetaO = bRec.wo.y;
         float cosThetaO = trigInverse(sinThetaO);
         float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
         float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
-
-        // float thetaI = std::atan2(bRec.wi.z, bRec.wi.x);
-        // float thetaO = std::atan2(bRec.wo.z, bRec.wi.x);
-
-        // float phiI = std::atan2(math::safe_sqrt(bRec.wi.x * bRec.wi.x + bRec.wi.z * bRec.wi.z), bRec.wi.y);
-        // float phiO = std::atan2(math::safe_sqrt(bRec.wo.x * bRec.wo.x + bRec.wo.z * bRec.wo.z), bRec.wo.y);
-
-        float thetaD = (thetaO - thetaI)*0.5f, thetaH = (thetaO + thetaI)*0.5f;
+        float thetaD = (thetaO - thetaI)*0.5f;
         float cosThetaD = std::cos(thetaD);
 
         float phi = std::atan2(bRec.wo.x, bRec.wo.z);
@@ -363,22 +326,15 @@ public:
         float thetaITT  = thetaI +      _scaleAngleRad;
         float thetaITRT = thetaI + 4.0f*_scaleAngleRad;
 
-        // Evaluate longitudinal scattering functions
-        // float MR   = M(_vR,   std::sin(thetaH),   sinThetaO, std::cos(thetaH),  cosThetaO);
-        // float MTT  = M(_vTT,  std::sin(thetaH),  sinThetaO, std::cos(thetaH),  cosThetaO);
-        // float MTRT = M(_vTRT, std::sin(thetaH), sinThetaO, std::cos(thetaH), cosThetaO);
-
-        // float MR   = M(_betaR, thetaH, _scaleAngleRad);
-        // float MTT  = M(_betaTT, thetaH, _scaleAngleRad * -0.5f);
-        // float MTRT = M(_betaTRT, thetaH, _scaleAngleRad * -1.5f);
-
         float MR   = M(_vR,   std::sin(thetaIR),   sinThetaO, std::cos(thetaIR),   cosThetaO);
         float MTT  = M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
         float MTRT = M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
 
+        MR = 0.0;
+        MTT = 0.0;
         Vector3f temp = MR*  _nR->eval(phi, cosThetaD)
             + MTT* _nTT->eval(phi, cosThetaD)
-            + temp = MTRT*_nTRT->eval(phi, cosThetaD);
+            + MTRT*_nTRT->eval(phi, cosThetaD);
 
         float value[3] = {temp.x, temp.y, temp.z};
         return Spectrum(value);
@@ -441,10 +397,13 @@ public:
         float pdfTT  = weightTT *M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
         float pdfTRT = weightTRT*M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
 
-        return (1.0f/weightSum)*
+        Float result = (1.0f/weightSum)*
             (pdfR  *  _nR->pdf(phi, cosThetaD)
             + pdfTT * _nTT->pdf(phi, cosThetaD)
             + pdfTRT*_nTRT->pdf(phi, cosThetaD));
+        // cout << 1.0f/weightSum << "  " <<1.0f/weightSum * pdfR << "  " << 1.0f/weightSum * pdfTT << "  " << 1.0f/weightSum * pdfTRT << "  " << result << "\n";
+        // cout << 1.0f/weightSum * _nR->pdf(phi, cosThetaD) << "  " << 1.0f/weightSum * _nTT->pdf(phi, cosThetaD) << "  " << 1.0f/weightSum * _nTRT->pdf(phi, cosThetaD) << "=-----\n";
+        return result;
     }
 
     float sampleM(float v, float sinThetaI, float cosThetaI, float xi1, float xi2) const
@@ -511,8 +470,8 @@ public:
         // }
         // return Spectrum(0.0f);
 
-        Point2 xiN = sample; // TODO should use random samples
-        Point2 xiM = sample;
+        Point2 xiN = bRec.sampler->next2D();
+        Point2 xiM = bRec.sampler->next2D();
 
         float sinThetaI = bRec.wi.y;
         float cosThetaI = trigInverse(sinThetaI);
@@ -533,14 +492,17 @@ public:
 
         float target = xiN.x*(weightR + weightTT + weightTRT);
         if (target < weightR) {
+            bRec.sampledComponent = 0;
             v = _vR;
             theta = thetaIR;
             lobe = _nR.get();
         } else if (target < weightR + weightTT) {
+            bRec.sampledComponent = 1;
             v = _vTT;
             theta = thetaITT;
             lobe = _nTT.get();
         } else {
+            bRec.sampledComponent = 2;
             v = _vTRT;
             theta = thetaITRT;
             lobe = _nTRT.get();
@@ -564,6 +526,10 @@ public:
         pdf = Marschner::pdf(bRec, ESolidAngle); // TODO vary esolidangle
         // bRec.weight = eval(event)/event.pdf;// TODO watch out for the weight
         bRec.sampledType = EDeltaReflection;
+        bRec.eta = 1.0f;
+        if (pdf <= 0 || pdf > 1) {
+            return Spectrum(0.0f);
+        }
 
         return eval(bRec, ESolidAngle) / pdf;
     }
@@ -750,5 +716,5 @@ Shader *Marschner::createShader(Renderer *renderer) const {
 
 MTS_IMPLEMENT_CLASS(MarschnerShader, false, Shader)
 MTS_IMPLEMENT_CLASS_S(Marschner, false, BSDF)
-MTS_EXPORT_PLUGIN(Marschner, "Thin dielectric BSDF");
+MTS_EXPORT_PLUGIN(Marschner, "Marschner BSDF");
 MTS_NAMESPACE_END

@@ -72,13 +72,13 @@ public:
         int x;
         _sampler->warp(v, xi, x);
 
-        phi = 2.0f*M_PI*(x + xi)*(1.0f/AzimuthalResolution);
-        pdf = _sampler->pdf(v, x)*float(AzimuthalResolution*(1.0f / (2.0f * M_PI)));
+        phi = 2.0f*M_PI_FLT*(x + xi)*(1.0f/AzimuthalResolution);
+        pdf = _sampler->pdf(v, x)*float(AzimuthalResolution*(1.0f / (2.0f * M_PI_FLT)));
     }
 
     Vector3f eval(float phi, float cosThetaD) const
     {
-        float u = (AzimuthalResolution - 1)*phi*(1.0f / (2.0f * M_PI));
+        float u = (AzimuthalResolution - 1)*phi*(1.0f / (2.0f * M_PI_FLT));
         float v = (AzimuthalResolution - 1)*cosThetaD;
         int x0 = math::clamp(int(u), 0, AzimuthalResolution - 2);
         int y0 = math::clamp(int(v), 0, AzimuthalResolution - 2);
@@ -93,24 +93,24 @@ public:
 
     float pdf(float phi, float cosThetaD) const
     {
-        float u = (AzimuthalResolution - 1)*phi*(1.0f / (2.0f * M_PI));
+        float u = (AzimuthalResolution - 1)*phi*(1.0f / (2.0f * M_PI_FLT));
         float v = (AzimuthalResolution - 1)*cosThetaD;
-        return _sampler->pdf(v, int(u))*float(AzimuthalResolution*(1.0f / (2.0f * M_PI)));
+        return _sampler->pdf(v, int(u))*float(AzimuthalResolution*(1.0f / (2.0f * M_PI_FLT)));
     }
 
     float weight(float cosThetaD) const
     {
         float v = (AzimuthalResolution - 1)*cosThetaD;
-        return _sampler->sum(v)*(2.0f * M_PI/AzimuthalResolution);
+        return _sampler->sum(v)*(2.0f * M_PI_FLT/AzimuthalResolution);
     }
 private:
     std::unique_ptr<Vector3f[]> _table;
     std::unique_ptr<InterpolatedDistribution1D> _sampler;
 };
 
-class Marschner : public BSDF {
+class MarschnerDiffuse : public BSDF {
 public:
-    Marschner(const Properties &props) : BSDF(props) {
+    MarschnerDiffuse(const Properties &props) : BSDF(props) {
         /* Specifies the internal index of refraction at the interface */
         Float intIOR = lookupIOR(props, "intIOR", "bk7");
 
@@ -122,13 +122,14 @@ public:
                 "refraction must be positive!");
 
         m_eta = intIOR / extIOR;
-        _sigmaA = Vector3f(0.22);        
+        _sigmaA = Vector3f(0.5);        
 
         m_specularReflectance = new ConstantSpectrumTexture(
-            props.getSpectrum("specularReflectance", Spectrum(1.0f)));
+            props.getSpectrum("specularReflectance", Spectrum(0.5f)));
         m_specularTransmittance = new ConstantSpectrumTexture(
-            props.getSpectrum("specularTransmittance", Spectrum(1.0f)));
-        
+            props.getSpectrum("specularTransmittance", Spectrum(0.5f)));
+        m_exponent = new ConstantFloatTexture(
+            props.getFloat("exponent", 30.0f));
         m_diffuseReflectance = new ConstantSpectrumTexture(
             props.getSpectrum("diffuseReflectance", Spectrum(0.5f)));
 
@@ -158,7 +159,7 @@ public:
         _vTRT = _betaTRT * _betaTRT;
     }
 
-    Marschner(Stream *stream, InstanceManager *manager)
+    MarschnerDiffuse(Stream *stream, InstanceManager *manager)
             : BSDF(stream, manager) {
         m_eta = stream->readFloat();
         m_specularReflectance = static_cast<Texture *>(manager->getInstance(stream));
@@ -447,6 +448,8 @@ public:
         float MR   = M(_vR,   std::sin(thetaIR),   sinThetaO, std::cos(thetaIR),   cosThetaO);
         float MTT  = M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
         float MTRT = M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
+        // float MR  = 0, MTT = 0;
+
 
         Vector3f temp = 0.15f * MR*  _nR->eval(phi, cosThetaD)
                 +  MTT* _nTT->eval(phi, cosThetaD)
@@ -720,7 +723,7 @@ public:
         if (choseSpecular) {
             /* Perfect specular reflection based on the microfacet normal */
             bRec.wo = Vector3f(sinPhi*cosThetaO, sinThetaO, cosPhi*cosThetaO);
-            pdf = Marschner::pdf(bRec, ESolidAngle); // TODO vary esolidangle
+            pdf = MarschnerDiffuse::pdf(bRec, ESolidAngle); // TODO vary esolidangle
             // bRec.weight = eval(event)/event.pdf;// TODO watch out for the weight
             bRec.sampledType = EDeltaReflection;
         } else {
@@ -731,9 +734,10 @@ public:
         bRec.eta = 1.0f;
 
         /* Guard against numerical imprecisions */
-        pdf = Marschner::pdf(bRec, ESolidAngle);
+        pdf = MarschnerDiffuse::pdf(bRec, ESolidAngle);
+        // cout << "PDF: " << pdf << endl;
 
-        if (pdf == 0)
+        if (pdf <= 0)
             return Spectrum(0.0f);
         else
             return eval(bRec, ESolidAngle) / pdf;
@@ -741,7 +745,7 @@ public:
 
     Spectrum sample(BSDFSamplingRecord &bRec, const Point2 &sample) const {
         float pdf;
-        return Marschner::sample(bRec, pdf, sample);
+        return MarschnerDiffuse::sample(bRec, pdf, sample);
     }
 
     void precomputeAzimuthalDistributions() {
@@ -850,7 +854,7 @@ public:
     }
 
     Float getRoughness(const Intersection &its, int component) const {
-        return 0.0f;
+        return _roughness;
     }
 
     std::string toString() const {
@@ -896,9 +900,9 @@ private:
 /* Fake glass shader -- it is really hopeless to visualize
    this material in the VPL renderer, so let's try to do at least
    something that suggests the presence of a transparent boundary */
-class MarschnerShader : public Shader {
+class MarschnerDiffuseShader : public Shader {
 public:
-    MarschnerShader(Renderer *renderer) :
+    MarschnerDiffuseShader(Renderer *renderer) :
         Shader(renderer, EBSDFShader) {
         m_flags = ETransparent;
     }
@@ -925,11 +929,11 @@ public:
     MTS_DECLARE_CLASS()
 };
 
-Shader *Marschner::createShader(Renderer *renderer) const {
-    return new MarschnerShader(renderer);
+Shader *MarschnerDiffuse::createShader(Renderer *renderer) const {
+    return new MarschnerDiffuseShader(renderer);
 }
 
-MTS_IMPLEMENT_CLASS(MarschnerShader, false, Shader)
-MTS_IMPLEMENT_CLASS_S(Marschner, false, BSDF)
-MTS_EXPORT_PLUGIN(Marschner, "Thin dielectric BSDF");
+MTS_IMPLEMENT_CLASS(MarschnerDiffuseShader, false, Shader)
+MTS_IMPLEMENT_CLASS_S(MarschnerDiffuse, false, BSDF)
+MTS_EXPORT_PLUGIN(MarschnerDiffuse, "Marschner Diffuse (color) BSDF");
 MTS_NAMESPACE_END
