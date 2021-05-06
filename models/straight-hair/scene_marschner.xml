@@ -29,7 +29,12 @@
   </sensor>
 
   <bsdf type="marschner" id="hair">
-    <rgb name="specularReflectance" value="0.143016, 0.0156076, 1.80928e-005"/>
+    <float name="alpha" value="0.2"/>
+    <string name="distribution" value="ggx"/>
+    <float name="intIOR" value="1.55"/>
+    <float name="extIOR" value="1"/>
+    <boolean name="nonlinear" value="false"/>
+    <rgb name="diffuseReflectance" value="0.143016, 0.0156076, 1.80928e-005"/>
     <float name="exponent" value="10.0"/>
   </bsdf>
 
