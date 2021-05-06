@@ -30,6 +30,7 @@
 #include <array>
 #include "gausssexylingerie.hpp"
 #include "InterpolatedDistribution1D.hpp"
+#include <mitsuba/core/warp.h>
 
 MTS_NAMESPACE_BEGIN
 
@@ -307,14 +308,28 @@ public:
 
 
     Spectrum eval(const BSDFSamplingRecord &bRec, EMeasure measure) const {
-        float sinThetaI = bRec.wi.y, sinThetaO = bRec.wo.y;
+
+        if (bRec.wo.z < 0) return Spectrum(0.0f); // Just don't trace rays that go under hair lol
+        float sinThetaI = bRec.wi.x, sinThetaO = bRec.wo.x;
         float cosThetaO = trigInverse(sinThetaO);
         float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
         float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
         float thetaD = (thetaO - thetaI)*0.5f;
         float cosThetaD = std::cos(thetaD);
 
-        float phi = std::atan2(bRec.wo.x, bRec.wo.z);
+        // std::ostringstream oss;
+        // oss << "New evaluation: ------" << endl;
+        // oss << "wi: " << bRec.wi.toString() << endl;
+        // oss << "wo: " << bRec.wo.toString() << endl;
+        // oss << "sinThetaI: " << sinThetaI << endl;
+        // oss << "cosThetaO: " << cosThetaO << endl;
+        // oss << "thetaI: " << thetaI << endl;
+        // oss << "thetaO: " << thetaO << endl;
+        // oss << "thetaD: " << thetaD << endl;
+        // oss << "cosThetaD: " << cosThetaD << endl;
+        // cout << oss.str();
+
+        float phi = std::atan2(bRec.wo.y, bRec.wo.z);
         if (phi < 0.0f)
             phi += M_PI_FLT * 2.0f;
 
@@ -330,13 +345,35 @@ public:
         float MTT  = M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
         float MTRT = M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
 
-        MR = 0.0;
-        MTT = 0.0;
-        Vector3f temp = MR*  _nR->eval(phi, cosThetaD)
+        // MR = 0.0;
+        // MTT = 0.0;
+        // MTRT = 0.0;
+        
+        // Vector3f temp = MR * _nR->eval(phi, cosThetaD)
+        //     + MTT* _nTT->eval(phi, cosThetaD)
+        //     + MTRT*_nTRT->eval(phi, cosThetaD);
+
+        Vector3f temp = MR * _nR->eval(phi, cosThetaD) +
             + MTT* _nTT->eval(phi, cosThetaD)
             + MTRT*_nTRT->eval(phi, cosThetaD);
 
         float value[3] = {temp.x, temp.y, temp.z};
+
+        std::ostringstream oss;
+        oss << "New eval ----" << endl;
+        oss << "wi: " << bRec.wi.toString() << endl;
+        oss << "wo: " << bRec.wo.toString() << endl;
+        oss << "sinThetaI: " << sinThetaI << endl;
+        oss << "cosThetaO: " << cosThetaO << endl;
+        oss << "thetaI: " << thetaI << endl;
+        oss << "thetaO: " << thetaO << endl;
+        oss << "thetaD: " << thetaD << endl;
+        oss << "phi: " << phi << endl;
+        oss << "cosThetaD: " << cosThetaD << endl;
+        oss << "Longitudinal Coeff" << MR << endl;
+        oss << "Azimuthal Coeff" << _nR->eval(phi, cosThetaD).toString() << endl;
+        oss << "End result: " << temp.toString() << endl;
+        // cout << oss.str();
         return Spectrum(value);
     }
     
@@ -345,65 +382,47 @@ public:
     }
 
     Float pdf(const BSDFSamplingRecord &bRec, EMeasure measure) const {
-        // bool sampleReflection   = (bRec.typeMask & EDeltaReflection)
-        //         && (bRec.component == -1 || bRec.component == 0) && measure == EDiscrete;
-        // bool sampleTransmission = (bRec.typeMask & ENull)
-        //         && (bRec.component == -1 || bRec.component == 1) && measure == EDiscrete;
+        // float sinThetaI = bRec.wi.x;
+        // float sinThetaO = bRec.wo.x;
+        // float cosThetaI = trigInverse(sinThetaI);
+        // float cosThetaO = trigInverse(sinThetaO);
+        // float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
+        // float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
+        // float thetaD = (thetaO - thetaI)*0.5f;
+        // float cosThetaD = std::cos(thetaD);
 
-        // Float R = fresnelDielectricExt(std::abs(Frame::cosTheta(bRec.wi)), m_eta), T = 1-R;
+        // float phi = std::atan2(bRec.wo.y, bRec.wo.z);
+        // if (phi < 0.0f)
+        //     phi += 2.0 * M_PI_FLT;
 
-        // MediumSamplingRecord dummy;
-        // PhaseFunctionSamplingRecord pRec(dummy, bRec.wi, bRec.wo);
-        // Float pdf = m_phase->pdf(pRec);
+        // float thetaIR   = thetaI - 2.0f*_scaleAngleRad;
+        // float thetaITT  = thetaI +      _scaleAngleRad;
+        // float thetaITRT = thetaI + 4.0f*_scaleAngleRad;
 
-        // // Account for internal reflections: R' = R + TRT + TR^3T + ..
-        // if (R < 1)
-        //     R += T*T * R / (1-R*R);
+        // float weightR   = _nR  ->weight(cosThetaI);
+        // float weightTT  = _nTT ->weight(cosThetaI);
+        // float weightTRT = _nTRT->weight(cosThetaI);
+        // float weightSum = weightR + weightTT + weightTRT;
 
-        // if (Frame::cosTheta(bRec.wi) * Frame::cosTheta(bRec.wo) >= 0) {
-        //     if (!sampleReflection || std::abs(dot(reflect(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
-        //         return 0.0f;
+        // float pdfR   = weightR  *M(_vR,   std::sin(thetaIR),   sinThetaO, std::cos(thetaIR),   cosThetaO);
+        // float pdfTT  = weightTT *M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
+        // float pdfTRT = weightTRT*M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
 
-        //     return pdf * (sampleTransmission ? R : 1.0f);
-        // } else {
-        //     if (!sampleTransmission || std::abs(dot(transmit(bRec.wi), bRec.wo)-1) > DeltaEpsilon)
-        //         return 0.0f;
+        // Float result = (1.0f/weightSum)*
+        //     (pdfR  *  _nR->pdf(phi, cosThetaD)
+        //     + pdfTT * _nTT->pdf(phi, cosThetaD)
+        //     + pdfTRT*_nTRT->pdf(phi, cosThetaD));
 
-        //     return pdf * (sampleReflection ? 1-R : 1.0f);
-        // }
-        float sinThetaI = bRec.wi.y;
-        float sinThetaO = bRec.wo.y;
-        float cosThetaI = trigInverse(sinThetaI);
-        float cosThetaO = trigInverse(sinThetaO);
-        float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
-        float thetaO = std::asin(math::clamp(sinThetaO, -1.0f, 1.0f));
-        float thetaD = (thetaO - thetaI)*0.5f;
-        float cosThetaD = std::cos(thetaD);
-
-        float phi = std::atan2(bRec.wo.x, bRec.wo.z);
-        if (phi < 0.0f)
-            phi += 2.0 * M_PI_FLT;
-
-        float thetaIR   = thetaI - 2.0f*_scaleAngleRad;
-        float thetaITT  = thetaI +      _scaleAngleRad;
-        float thetaITRT = thetaI + 4.0f*_scaleAngleRad;
-
-        float weightR   = _nR  ->weight(cosThetaI);
-        float weightTT  = _nTT ->weight(cosThetaI);
-        float weightTRT = _nTRT->weight(cosThetaI);
-        float weightSum = weightR + weightTT + weightTRT;
-
-        float pdfR   = weightR  *M(_vR,   std::sin(thetaIR),   sinThetaO, std::cos(thetaIR),   cosThetaO);
-        float pdfTT  = weightTT *M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
-        float pdfTRT = weightTRT*M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
-
-        Float result = (1.0f/weightSum)*
-            (pdfR  *  _nR->pdf(phi, cosThetaD)
-            + pdfTT * _nTT->pdf(phi, cosThetaD)
-            + pdfTRT*_nTRT->pdf(phi, cosThetaD));
-        // cout << 1.0f/weightSum << "  " <<1.0f/weightSum * pdfR << "  " << 1.0f/weightSum * pdfTT << "  " << 1.0f/weightSum * pdfTRT << "  " << result << "\n";
-        // cout << 1.0f/weightSum * _nR->pdf(phi, cosThetaD) << "  " << 1.0f/weightSum * _nTT->pdf(phi, cosThetaD) << "  " << 1.0f/weightSum * _nTRT->pdf(phi, cosThetaD) << "=-----\n";
-        return result;
+        // std::ostringstream oss;
+        // oss << "new pdf" << endl;
+        // oss << "weightSum: " << weightSum << endl;
+        // oss << "R: " << pdfR << " * " << _nR->pdf(phi, cosThetaD) << endl;
+        // oss << "TT: " << pdfTT << " * " << _nTT->pdf(phi, cosThetaD) << endl;
+        // oss << "pdfTRT: " << pdfTRT << " * " << _nTRT->pdf(phi, cosThetaD) << endl;
+        // oss << "result: " << result << endl;
+        // // cout << oss.str();
+        
+        return warp::squareToCosineHemispherePdf(bRec.wo);;
     }
 
     float sampleM(float v, float sinThetaI, float cosThetaI, float xi1, float xi2) const
@@ -473,7 +492,7 @@ public:
         Point2 xiN = bRec.sampler->next2D();
         Point2 xiM = bRec.sampler->next2D();
 
-        float sinThetaI = bRec.wi.y;
+        float sinThetaI = bRec.wi.x;
         float cosThetaI = trigInverse(sinThetaI);
         float thetaI = std::asin(math::clamp(sinThetaI, -1.0f, 1.0f));
 
@@ -522,12 +541,13 @@ public:
         float sinPhi = std::sin(phi);
         float cosPhi = std::cos(phi);
 
-        bRec.wo = Vector3f(sinPhi*cosThetaO, sinThetaO, cosPhi*cosThetaO);
+        // bRec.wo = Vector3f(sinPhi*cosThetaO, sinThetaO, cosPhi*cosThetaO);
+        bRec.wo = warp::squareToCosineHemisphere(sample);
         pdf = Marschner::pdf(bRec, ESolidAngle); // TODO vary esolidangle
         // bRec.weight = eval(event)/event.pdf;// TODO watch out for the weight
         bRec.sampledType = EDeltaReflection;
         bRec.eta = 1.0f;
-        if (pdf <= 0 || pdf > 1) {
+        if (pdf < 1e-4) {
             return Spectrum(0.0f);
         }
 

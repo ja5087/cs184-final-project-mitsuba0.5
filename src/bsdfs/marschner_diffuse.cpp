@@ -72,13 +72,13 @@ public:
         int x;
         _sampler->warp(v, xi, x);
 
-        phi = 2.0f*M_PI_FLT*(x + xi)*(1.0f/AzimuthalResolution);
-        pdf = _sampler->pdf(v, x)*float(AzimuthalResolution*(1.0f / (2.0f * M_PI_FLT)));
+        phi = 2.0f*M_PI*(x + xi)*(1.0f/AzimuthalResolution);
+        pdf = _sampler->pdf(v, x)*float(AzimuthalResolution*(1.0f / (2.0f * M_PI)));
     }
 
     Vector3f eval(float phi, float cosThetaD) const
     {
-        float u = (AzimuthalResolution - 1)*phi*(1.0f / (2.0f * M_PI_FLT));
+        float u = (AzimuthalResolution - 1)*phi*(1.0f / (2.0f * M_PI));
         float v = (AzimuthalResolution - 1)*cosThetaD;
         int x0 = math::clamp(int(u), 0, AzimuthalResolution - 2);
         int y0 = math::clamp(int(v), 0, AzimuthalResolution - 2);
@@ -93,24 +93,24 @@ public:
 
     float pdf(float phi, float cosThetaD) const
     {
-        float u = (AzimuthalResolution - 1)*phi*(1.0f / (2.0f * M_PI_FLT));
+        float u = (AzimuthalResolution - 1)*phi*(1.0f / (2.0f * M_PI));
         float v = (AzimuthalResolution - 1)*cosThetaD;
-        return _sampler->pdf(v, int(u))*float(AzimuthalResolution*(1.0f / (2.0f * M_PI_FLT)));
+        return _sampler->pdf(v, int(u))*float(AzimuthalResolution*(1.0f / (2.0f * M_PI)));
     }
 
     float weight(float cosThetaD) const
     {
         float v = (AzimuthalResolution - 1)*cosThetaD;
-        return _sampler->sum(v)*(2.0f * M_PI_FLT/AzimuthalResolution);
+        return _sampler->sum(v)*(2.0f * M_PI/AzimuthalResolution);
     }
 private:
     std::unique_ptr<Vector3f[]> _table;
     std::unique_ptr<InterpolatedDistribution1D> _sampler;
 };
 
-class MarschnerDiffuse : public BSDF {
+class Marschner : public BSDF {
 public:
-    MarschnerDiffuse(const Properties &props) : BSDF(props) {
+    Marschner(const Properties &props) : BSDF(props) {
         /* Specifies the internal index of refraction at the interface */
         Float intIOR = lookupIOR(props, "intIOR", "bk7");
 
@@ -122,14 +122,13 @@ public:
                 "refraction must be positive!");
 
         m_eta = intIOR / extIOR;
-        _sigmaA = Vector3f(0.5);        
+        _sigmaA = Vector3f(0.22);        
 
         m_specularReflectance = new ConstantSpectrumTexture(
-            props.getSpectrum("specularReflectance", Spectrum(0.5f)));
+            props.getSpectrum("specularReflectance", Spectrum(0.1f)));
         m_specularTransmittance = new ConstantSpectrumTexture(
-            props.getSpectrum("specularTransmittance", Spectrum(0.5f)));
-        m_exponent = new ConstantFloatTexture(
-            props.getFloat("exponent", 30.0f));
+            props.getSpectrum("specularTransmittance", Spectrum(0.1f)));
+        
         m_diffuseReflectance = new ConstantSpectrumTexture(
             props.getSpectrum("diffuseReflectance", Spectrum(1.0f)));
 
@@ -159,12 +158,11 @@ public:
         _vTRT = _betaTRT * _betaTRT;
     }
 
-    MarschnerDiffuse(Stream *stream, InstanceManager *manager)
+    Marschner(Stream *stream, InstanceManager *manager)
             : BSDF(stream, manager) {
         m_eta = stream->readFloat();
         m_specularReflectance = static_cast<Texture *>(manager->getInstance(stream));
         m_specularTransmittance = static_cast<Texture *>(manager->getInstance(stream));
-        m_exponent = static_cast<Texture *>(manager->getInstance(stream));
         m_phase = static_cast<PhaseFunction *>(manager->getInstance(stream));
 
         m_type = (MicrofacetDistribution::EType) stream->readUInt();
@@ -202,15 +200,10 @@ public:
             m_specularReflectance, "specularReflectance", 1.0f);
         m_specularTransmittance = ensureEnergyConservation(
             m_specularTransmittance, "specularTransmittance", 1.0f);
-        m_diffuseReflectance = ensureEnergyConservation(
-            m_specularTransmittance, "diffuseReflectiance", 1.0f);
 
         m_components.clear();
-        m_components.push_back(EDelta1DReflection | EFrontSide | EBackSide |
-            ((!m_specularReflectance->isConstant()
-              || !m_exponent->isConstant()) ? ESpatiallyVarying : 0));
-        // m_components.push_back(EDeltaReflection | EFrontSide | EBackSide
-        //     | (m_specularReflectance->isConstant() ? 0 : ESpatiallyVarying));
+        m_components.push_back(EDeltaReflection | EFrontSide | EBackSide
+            | (m_specularReflectance->isConstant() ? 0 : ESpatiallyVarying));
         m_components.push_back(ENull | EFrontSide | EBackSide
             | (m_specularTransmittance->isConstant() ? 0 : ESpatiallyVarying));
         m_components.push_back(EDiffuseReflection | EFrontSide
@@ -221,27 +214,27 @@ public:
               sAvg = m_specularReflectance->getAverage().getLuminance();
         m_specularSamplingWeight = sAvg / (dAvg + sAvg);
 
-        // m_invEta2 = 1.0f / (m_eta*m_eta);
+        m_invEta2 = 1.0f / (m_eta*m_eta);
 
-        // if (!m_externalRoughTransmittance.get()) {
-        //     /* Load precomputed data used to compute the rough
-        //        transmittance through the dielectric interface */
-        //     m_externalRoughTransmittance = new RoughTransmittance(m_type);
+        if (!m_externalRoughTransmittance.get()) {
+            /* Load precomputed data used to compute the rough
+               transmittance through the dielectric interface */
+            m_externalRoughTransmittance = new RoughTransmittance(m_type);
 
-        //     m_externalRoughTransmittance->checkEta(m_eta);
-        //     m_externalRoughTransmittance->checkAlpha(m_alpha->getMinimum().average());
-        //     m_externalRoughTransmittance->checkAlpha(m_alpha->getMaximum().average());
+            m_externalRoughTransmittance->checkEta(m_eta);
+            m_externalRoughTransmittance->checkAlpha(m_alpha->getMinimum().average());
+            m_externalRoughTransmittance->checkAlpha(m_alpha->getMaximum().average());
 
-        //     /* Reduce the rough transmittance data to a 2D slice */
-        //     m_internalRoughTransmittance = m_externalRoughTransmittance->clone();
-        //     m_externalRoughTransmittance->setEta(m_eta);
-        //     m_internalRoughTransmittance->setEta(1/m_eta);
+            /* Reduce the rough transmittance data to a 2D slice */
+            m_internalRoughTransmittance = m_externalRoughTransmittance->clone();
+            m_externalRoughTransmittance->setEta(m_eta);
+            m_internalRoughTransmittance->setEta(1/m_eta);
 
-        //     /* If possible, even reduce it to a 1D slice */
-        //     if (constAlpha)
-        //         m_externalRoughTransmittance->setAlpha(
-        //             m_alpha->eval(Intersection()).average());
-        // }
+            /* If possible, even reduce it to a 1D slice */
+            if (constAlpha)
+                m_externalRoughTransmittance->setAlpha(
+                    m_alpha->eval(Intersection()).average());
+        }
 
 
         m_usesRayDifferentials =
@@ -460,8 +453,6 @@ public:
         float MR   = M(_vR,   std::sin(thetaIR),   sinThetaO, std::cos(thetaIR),   cosThetaO);
         float MTT  = M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
         float MTRT = M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
-        // float MR  = 0, MTT = 0;
-
 
         Vector3f temp = MR*  _nR->eval(phi, cosThetaD)
                 +  MTT* _nTT->eval(phi, cosThetaD)
@@ -553,69 +544,39 @@ public:
         float pdfTT  = weightTT *M(_vTT,  std::sin(thetaITT),  sinThetaO, std::cos(thetaITT),  cosThetaO);
         float pdfTRT = weightTRT*M(_vTRT, std::sin(thetaITRT), sinThetaO, std::cos(thetaITRT), cosThetaO);
 
-        Float specProb = (1.0f/weightSum)*
-            (pdfR  *  _nR->pdf(phi, cosThetaD)
-            + pdfTT * _nTT->pdf(phi, cosThetaD)
-            + pdfTRT*_nTRT->pdf(phi, cosThetaD));
+        MicrofacetDistribution distr(
+            m_type,
+            m_alpha->eval(bRec.its).average(),
+            m_sampleVisible
+        );
 
-        if (Frame::cosTheta(bRec.wi) <= 0 ||
-            Frame::cosTheta(bRec.wo) <= 0 || measure != ESolidAngle)
-            return 0.0f;
+        /* Calculate the reflection half-vector */
+        const Vector H = normalize(bRec.wo+bRec.wi);
 
-        bool hasSpecular = (bRec.typeMask & EGlossyReflection)
-                && (bRec.component == -1 || bRec.component == 0);
-        bool hasDiffuse  = (bRec.typeMask & EDiffuseReflection)
-                && (bRec.component == -1 || bRec.component == 1);
+        float probDiffuse, probSpecular;
+        if (hasDiffuse) {
+            /* Find the probability of sampling the specular component */
+            probSpecular = 1-m_externalRoughTransmittance->eval(Frame::cosTheta(bRec.wi), distr.getAlpha());
 
-        Float diffuseProb = 0.0f;
+            /* Reallocate samples */
+            probSpecular = (probSpecular*m_specularSamplingWeight) /
+                (probSpecular*m_specularSamplingWeight +
+                (1-probSpecular) * (1-m_specularSamplingWeight));
+
+            probDiffuse = 1 - probSpecular;
+        } else {
+            probDiffuse = probSpecular = 1.0f;
+        }
+        
+        float result = (1.0f/weightSum)*
+        (pdfR  *  _nR->pdf(phi, cosThetaD)
+        + pdfTT * _nTT->pdf(phi, cosThetaD)
+        + pdfTRT*_nTRT->pdf(phi, cosThetaD)) * probSpecular;        
 
         if (hasDiffuse)
-            diffuseProb = warp::squareToCosineHemispherePdf(bRec.wo);
+            result += probDiffuse * warp::squareToCosineHemispherePdf(bRec.wo);
 
-        if (hasDiffuse && hasSpecular)
-            return m_specularSamplingWeight * specProb +
-                   (1-m_specularSamplingWeight) * diffuseProb;
-        else if (hasDiffuse)
-            return diffuseProb;
-        else if (hasSpecular)
-            return specProb;
-        else
-            return 0.0f;
-
-
-        // MicrofacetDistribution distr(
-        //     m_type,
-        //     m_alpha->eval(bRec.its).average(),
-        //     m_sampleVisible
-        // );
-
-        // /* Calculate the reflection half-vector */
-        // const Vector H = normalize(bRec.wo+bRec.wi);
-
-        // float probDiffuse, probSpecular;
-        // if (hasDiffuse) {
-        //     /* Find the probability of sampling the specular component */
-        //     probSpecular = 1-m_externalRoughTransmittance->eval(Frame::cosTheta(bRec.wi), distr.getAlpha());
-
-        //     /* Reallocate samples */
-        //     probSpecular = (probSpecular*m_specularSamplingWeight) /
-        //         (probSpecular*m_specularSamplingWeight +
-        //         (1-probSpecular) * (1-m_specularSamplingWeight));
-
-        //     probDiffuse = 1 - probSpecular;
-        // } else {
-        //     probDiffuse = probSpecular = 1.0f;
-        // }
-        
-        // float result = (1.0f/weightSum)*
-        // (pdfR  *  _nR->pdf(phi, cosThetaD)
-        // + pdfTT * _nTT->pdf(phi, cosThetaD)
-        // + pdfTRT*_nTRT->pdf(phi, cosThetaD)) * probSpecular;        
-
-        // if (hasDiffuse)
-        //     result += probDiffuse * warp::squareToCosineHemispherePdf(bRec.wo);
-
-        // return result;
+        return result;
     }
 
     float sampleM(float v, float sinThetaI, float cosThetaI, float xi1, float xi2) const
@@ -759,7 +720,7 @@ public:
         if (choseSpecular) {
             /* Perfect specular reflection based on the microfacet normal */
             bRec.wo = Vector3f(sinPhi*cosThetaO, sinThetaO, cosPhi*cosThetaO);
-            pdf = MarschnerDiffuse::pdf(bRec, ESolidAngle); // TODO vary esolidangle
+            pdf = Marschner::pdf(bRec, ESolidAngle); // TODO vary esolidangle
             // bRec.weight = eval(event)/event.pdf;// TODO watch out for the weight
             bRec.sampledType = EDeltaReflection;
         } else {
@@ -770,10 +731,9 @@ public:
         bRec.eta = 1.0f;
 
         /* Guard against numerical imprecisions */
-        pdf = MarschnerDiffuse::pdf(bRec, ESolidAngle);
-        // cout << "PDF: " << pdf << endl;
+        pdf = Marschner::pdf(bRec, ESolidAngle);
 
-        if (pdf <= 0)
+        if (pdf == 0)
             return Spectrum(0.0f);
         else
             return eval(bRec, ESolidAngle) / pdf;
@@ -781,7 +741,7 @@ public:
 
     Spectrum sample(BSDFSamplingRecord &bRec, const Point2 &sample) const {
         float pdf;
-        return MarschnerDiffuse::sample(bRec, pdf, sample);
+        return Marschner::sample(bRec, pdf, sample);
     }
 
     void precomputeAzimuthalDistributions() {
@@ -890,7 +850,7 @@ public:
     }
 
     Float getRoughness(const Intersection &its, int component) const {
-        return _roughness;
+        return 0.0f;
     }
 
     std::string toString() const {
@@ -911,7 +871,6 @@ public:
 private:
     ref<Texture> m_specularTransmittance;
     ref<Texture> m_specularReflectance;
-    ref<const Texture> m_exponent;
     ref<PhaseFunction> m_phase;
     float m_eta;
     float _betaR;
@@ -937,9 +896,9 @@ private:
 /* Fake glass shader -- it is really hopeless to visualize
    this material in the VPL renderer, so let's try to do at least
    something that suggests the presence of a transparent boundary */
-class MarschnerDiffuseShader : public Shader {
+class MarschnerShader : public Shader {
 public:
-    MarschnerDiffuseShader(Renderer *renderer) :
+    MarschnerShader(Renderer *renderer) :
         Shader(renderer, EBSDFShader) {
         m_flags = ETransparent;
     }
@@ -966,11 +925,11 @@ public:
     MTS_DECLARE_CLASS()
 };
 
-Shader *MarschnerDiffuse::createShader(Renderer *renderer) const {
-    return new MarschnerDiffuseShader(renderer);
+Shader *Marschner::createShader(Renderer *renderer) const {
+    return new MarschnerShader(renderer);
 }
 
-MTS_IMPLEMENT_CLASS(MarschnerDiffuseShader, false, Shader)
-MTS_IMPLEMENT_CLASS_S(MarschnerDiffuse, false, BSDF)
-MTS_EXPORT_PLUGIN(MarschnerDiffuse, "Marschner Diffuse (color) BSDF");
+MTS_IMPLEMENT_CLASS(MarschnerShader, false, Shader)
+MTS_IMPLEMENT_CLASS_S(Marschner, false, BSDF)
+MTS_EXPORT_PLUGIN(Marschner, "Thin dielectric BSDF");
 MTS_NAMESPACE_END
